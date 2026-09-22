@@ -31,12 +31,29 @@ BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:6000")
 BACKEND_SERVICE_USER = os.environ.get("BACKEND_SERVICE_USER", "service-account")
 BACKEND_SERVICE_PASSWORD = os.environ.get("BACKEND_SERVICE_PASSWORD", "change-me")
 
+# Fetch metadata manually so we can rewrite the external-facing URLs
+metadata_url = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/.well-known/openid-configuration"
+metadata = requests.get(metadata_url).json()
+
+KEYCLOAK_EXTERNAL_URL = os.environ.get("KEYCLOAK_EXTERNAL_URL", "http://localhost:8080")
+
+# Rewrite the issuer and authorization_endpoint to use the external URL
+# so the browser is redirected properly and token validation passes.
+if KEYCLOAK_EXTERNAL_URL != KEYCLOAK_URL:
+    metadata["issuer"] = metadata["issuer"].replace(KEYCLOAK_URL, KEYCLOAK_EXTERNAL_URL)
+    metadata["authorization_endpoint"] = metadata["authorization_endpoint"].replace(KEYCLOAK_URL, KEYCLOAK_EXTERNAL_URL)
+
+
 oauth = OAuth(app)
 oauth.register(
     name="keycloak",
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET,
-    server_metadata_url=f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/.well-known/openid-configuration",
+    server_metadata=metadata,
+    authorize_url=metadata["authorization_endpoint"],
+    access_token_url=metadata["token_endpoint"],
+    jwks_uri=metadata.get("jwks_uri"),
+    userinfo_endpoint=metadata.get("userinfo_endpoint"),
     client_kwargs={"scope": "openid email profile"},
 )
 
@@ -48,7 +65,6 @@ HEADERS_NO_DEVOLVER = {"content-encoding", "content-length", "transfer-encoding"
 def login():
     redirect_uri = url_for("auth_callback", _external=True)
     return oauth.keycloak.authorize_redirect(redirect_uri)
-
 
 @app.route("/auth/callback")
 def auth_callback():

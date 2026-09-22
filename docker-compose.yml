@@ -34,7 +34,7 @@ services:
       # — sin ese límite, Keycloak puede asumir la memoria completa del host y sobrepasar
       # los 512 MB gratuitos de Render. Además, se fija un heap explícito conservador como
       # margen de seguridad extra (dejando espacio para metaspace y memoria nativa).
-      JAVA_OPTS_APPEND: "-Xms128m -Xmx300m -XX:MaxMetaspaceSize=100m"
+      JAVA_OPTS_APPEND: "-Xms128m -Xmx250m -XX:MaxMetaspaceSize=150m"
     volumes:
       # --import-realm carga automáticamente el realm, el cliente del auth-proxy y un usuario
       # de prueba (ana.torres / identityhub123) al arrancar. Nada que configurar a mano para
