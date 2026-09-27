@@ -12,7 +12,7 @@ services:
     name: identityhub-inventory
     runtime: python
     plan: free
-    buildCommand: "pip install -r inventory-service/requirements.txt"
+    buildCommand: "pip install --require-hashes -r inventory-service/requirements.lock"
     startCommand: "cd inventory-service && python app.py"
     envVars:
       - key: DATABASE_URL

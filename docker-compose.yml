@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: identityhub
       POSTGRES_USER: identityhub
-      POSTGRES_PASSWORD: identityhub_dev_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env (copiar .env.example)}
     ports:
       - "5432:5432"
     volumes:
@@ -23,11 +23,11 @@ services:
     command: start-dev --import-realm
     environment:
       KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Falta KEYCLOAK_ADMIN_PASSWORD en .env (copiar .env.example)}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/identityhub
       KC_DB_USERNAME: identityhub
-      KC_DB_PASSWORD: identityhub_dev_password
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD en .env (copiar .env.example)}
       # Desde Keycloak 24, el heap de la JVM se calcula automáticamente como un porcentaje
       # de la memoria del contenedor (por defecto ~70%). Por eso el límite de memoria del
       # contenedor (mem_limit, abajo) es lo que realmente controla cuánto heap toma Keycloak
@@ -52,7 +52,7 @@ services:
   inventory-service:
     build: ./inventory-service
     environment:
-      DATABASE_URL: postgresql://identityhub:identityhub_dev_password@postgres:5432/identityhub
+      DATABASE_URL: postgresql://identityhub:${POSTGRES_PASSWORD}@postgres:5432/identityhub
       KEYCLOAK_URL: http://keycloak:8080
     ports:
       - "5000:5000"
@@ -67,7 +67,7 @@ services:
     build: ./legacy-app-demo
     environment:
       BACKEND_SERVICE_USER: service-account
-      BACKEND_SERVICE_PASSWORD: clave-de-servicio-cambiar
+      BACKEND_SERVICE_PASSWORD: ${BACKEND_SERVICE_PASSWORD:?Falta BACKEND_SERVICE_PASSWORD en .env (copiar .env.example)}
     ports:
       - "6000:6000"
     mem_limit: 256m
@@ -78,10 +78,10 @@ services:
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: identityhub
       PROXY_CLIENT_ID: auth-proxy
-      PROXY_CLIENT_SECRET: auth-proxy-dev-secret-cambiar-en-produccion
+      PROXY_CLIENT_SECRET: ${PROXY_CLIENT_SECRET:?Falta PROXY_CLIENT_SECRET en .env (copiar .env.example)}
       BACKEND_URL: http://legacy-app-demo:6000
       BACKEND_SERVICE_USER: service-account
-      BACKEND_SERVICE_PASSWORD: clave-de-servicio-cambiar
+      BACKEND_SERVICE_PASSWORD: ${BACKEND_SERVICE_PASSWORD:?Falta BACKEND_SERVICE_PASSWORD en .env (copiar .env.example)}
     ports:
       - "9000:9000"
     depends_on:
