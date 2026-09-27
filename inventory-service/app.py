@@ -120,7 +120,7 @@ def calcular_puntaje_riesgo(alcance_oauth: str, fecha_ultimo_uso):
     return min(100, base + bonus_inactividad)
 
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def panel():
     """Panel visual del servicio de inventario. Consume las mismas APIs JSON ya existentes."""
     return render_template("dashboard.html")

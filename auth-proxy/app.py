@@ -49,13 +49,13 @@ HEADERS_NO_REENVIABLES = {"host", "cookie", "content-length"}
 HEADERS_NO_DEVOLVER = {"content-encoding", "content-length", "transfer-encoding", "connection"}
 
 
-@app.route("/login")
+@app.route("/login", methods=["GET"])
 def login():
     redirect_uri = url_for("auth_callback", _external=True)
     return oauth.keycloak.authorize_redirect(redirect_uri)
 
 
-@app.route("/auth/callback")
+@app.route("/auth/callback", methods=["GET"])
 def auth_callback():
     token = oauth.keycloak.authorize_access_token()
     userinfo = token.get("userinfo") or {}
@@ -66,7 +66,7 @@ def auth_callback():
     return redirect("/")
 
 
-@app.route("/logout")
+@app.route("/logout", methods=["GET"])
 def logout():
     session.clear()
     return redirect("/login")
@@ -81,7 +81,7 @@ def _reenviar_a_backend(path):
     usuario = session["usuario"]
     url_destino = f"{BACKEND_URL}/{path}"
     headers_reenviados = {
-        k: v for k, v in request.headers if k.lower() not in HEADERS_NO_REENVIABLES
+        k: v for k, v in request.headers.items() if k.lower() not in HEADERS_NO_REENVIABLES
     }
     headers_reenviados["X-Forwarded-User"] = usuario["email"]
 

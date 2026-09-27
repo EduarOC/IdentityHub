@@ -32,7 +32,7 @@ def exigir_basic_auth():
         return _no_autorizado()
 
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def home():
     # El header X-Forwarded-User lo agrega el auth-proxy, no el usuario final. Sirve para que
     # esta app (o sus logs) sepan quién hizo la petición real, aunque la autenticación hacia
@@ -45,7 +45,7 @@ def home():
     })
 
 
-@app.route("/facturas")
+@app.route("/facturas", methods=["GET"])
 def facturas():
     usuario_real = request.headers.get("X-Forwarded-User", "desconocido")
     return jsonify({
@@ -59,4 +59,7 @@ def facturas():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 6000))
-    app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "0") == "1")
+    # Por defecto solo escucha en localhost. En Docker, el Dockerfile define HOST=0.0.0.0
+    # para que el contenedor sea alcanzable por el auth-proxy dentro de la red de compose.
+    host = os.environ.get("HOST", "127.0.0.1")
+    app.run(host=host, port=port, debug=os.environ.get("FLASK_DEBUG", "0") == "1")

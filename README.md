@@ -65,8 +65,13 @@ docs/
 ## Cómo levantar el entorno local
 
 ```bash
+cp .env.example .env   # solo la primera vez: credenciales de desarrollo local
 docker compose up -d
 ```
+
+Las contraseñas ya no están escritas en `docker-compose.yml` (hallazgo de SonarCloud): se leen
+del archivo `.env`, que no se sube al repositorio. Si falta alguna, Docker Compose se detiene y
+indica cuál.
 
 Esto levanta Keycloak en `http://localhost:8080` (admin/admin por defecto — cambiar antes de
 cualquier uso real), el servicio de inventario en `http://localhost:5000`, y el auth reverse
