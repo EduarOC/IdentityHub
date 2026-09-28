@@ -159,7 +159,7 @@ def importar_apps_descubiertas():
 
     Body esperado: {"apps": [{"nombre": str, "alcance_oauth": str, "fecha_ultimo_uso": "ISO8601" | null}]}
     """
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     apps = data.get("apps", [])
     if not isinstance(apps, list) or len(apps) == 0:
         return jsonify({"success": False, "error": "No se recibieron aplicativos para importar."}), 400
@@ -256,7 +256,7 @@ def iniciar_offboarding(usuario_id):
     TODO técnico pendiente: reemplazar la simulación de abajo por la llamada real a la API
     de administración de Keycloak (deshabilitar el usuario) y al auth proxy (invalidar sesión).
     """
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     responsable = data.get("responsable", "desconocido")
 
     session = SessionLocal()
