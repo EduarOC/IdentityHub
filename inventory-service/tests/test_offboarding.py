@@ -74,3 +74,21 @@ def test_offboarding_sin_cuerpo_json_responde_json(client, con_datos):
     r = client.post(f"/api/usuarios/{ana}/offboarding", data="", content_type="text/plain")
     assert r.status_code == 200
     assert r.is_json
+
+
+def test_historial_incluye_accesos_revocados(client, con_datos):
+    # HU-05: consultar los accesos de un empleado incluidos los revocados, con ambas fechas.
+    ana = _id_de(client, "Ana Torres")
+    client.post(f"/api/usuarios/{ana}/offboarding", json={"responsable": "admin.ti"})
+    historial = client.get(f"/api/usuarios/{ana}/accesos?historial=1").get_json()
+    assert {a["aplicativo"] for a in historial} == {"Slack", "Sistema de Facturación Legacy"}
+    assert all(a["fecha_revocado"] is not None for a in historial)
+    assert all(a["fecha_otorgado"] for a in historial)
+
+
+def test_vista_por_defecto_muestra_solo_vigentes_con_nombre(client, con_datos):
+    carlos = _id_de(client, "Carlos Ruiz")
+    accesos = client.get(f"/api/usuarios/{carlos}/accesos").get_json()
+    assert len(accesos) == 2
+    assert all(a["fecha_revocado"] is None for a in accesos)
+    assert all(a["aplicativo"] for a in accesos)
