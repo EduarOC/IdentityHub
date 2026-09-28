@@ -9,7 +9,8 @@ def test_offboarding_revoca_todos_los_accesos(client, con_datos):
     ana = _id_de(client, "Ana Torres")
     r = client.post(f"/api/usuarios/{ana}/offboarding", json={"responsable": "admin.ti"})
     body = r.get_json()
-    assert r.status_code == 200 and body["success"] is True
+    assert r.status_code == 200
+    assert body["success"] is True
     assert set(body["aplicativos_revocados"]) == {"Slack", "Sistema de Facturación Legacy"}
     assert client.get(f"/api/usuarios/{ana}/accesos").get_json() == []
 
@@ -50,7 +51,8 @@ def test_offboarding_usuario_sin_accesos(client, con_datos):
     ana = _id_de(client, "Ana Torres")
     client.post(f"/api/usuarios/{ana}/offboarding", json={})
     r = client.post(f"/api/usuarios/{ana}/offboarding", json={})
-    assert r.status_code == 200 and r.get_json()["aplicativos_revocados"] == []
+    assert r.status_code == 200
+    assert r.get_json()["aplicativos_revocados"] == []
 
 
 def test_offboarding_usuario_inexistente(client, con_datos):
@@ -70,4 +72,5 @@ def test_offboarding_sin_cuerpo_json_responde_json(client, con_datos):
     # Regresión: antes, sin cuerpo JSON, Flask respondía 415 con una página HTML.
     ana = _id_de(client, "Ana Torres")
     r = client.post(f"/api/usuarios/{ana}/offboarding", data="", content_type="text/plain")
-    assert r.status_code == 200 and r.is_json
+    assert r.status_code == 200
+    assert r.is_json

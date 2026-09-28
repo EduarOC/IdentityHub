@@ -25,12 +25,12 @@ def proxy():
     return mod
 
 
-@pytest.fixture()
+@pytest.fixture
 def client(proxy):
     return proxy.app.test_client()
 
 
-@pytest.fixture()
+@pytest.fixture
 def sesion_iniciada(client):
     with client.session_transaction() as s:
         s["usuario"] = {"email": "ana.torres@empresa.com", "nombre": "Ana Torres"}

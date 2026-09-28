@@ -8,7 +8,8 @@ def test_importar_calcula_riesgo_y_marca_origen(client, inv):
     assert r.status_code == 200
     assert r.get_json()["importados"] == [{"nombre": "Canva", "puntaje_riesgo": 85}]
     lista = client.get("/api/aplicativos/riesgo").get_json()
-    assert lista[0]["nombre"] == "Canva" and lista[0]["fecha_ultimo_uso"] is None
+    assert lista[0]["nombre"] == "Canva"
+    assert lista[0]["fecha_ultimo_uso"] is None
     # Los descubiertos no se mezclan con el catálogo manual.
     assert client.get("/api/aplicativos").get_json() == []
 
@@ -45,7 +46,8 @@ def test_entradas_sin_nombre_se_ignoran(client):
 
 def test_importar_lista_vacia_es_error(client):
     r = client.post("/api/discovery/importar", json={"apps": []})
-    assert r.status_code == 400 and r.get_json()["success"] is False
+    assert r.status_code == 400
+    assert r.get_json()["success"] is False
 
 
 def test_importar_formato_invalido_es_error(client):
@@ -55,4 +57,5 @@ def test_importar_formato_invalido_es_error(client):
 
 def test_importar_sin_cuerpo_json_responde_json(client):
     r = client.post("/api/discovery/importar", data="x", content_type="text/plain")
-    assert r.status_code == 400 and r.is_json
+    assert r.status_code == 400
+    assert r.is_json

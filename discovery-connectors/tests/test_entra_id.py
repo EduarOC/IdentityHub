@@ -8,7 +8,7 @@ import pytest
 MOD_PATH = pathlib.Path(__file__).resolve().parents[1] / "entra_id.py"
 
 
-@pytest.fixture()
+@pytest.fixture
 def entra(monkeypatch):
     spec = importlib.util.spec_from_file_location("entra_id", MOD_PATH)
     mod = importlib.util.module_from_spec(spec)

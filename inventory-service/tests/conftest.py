@@ -20,7 +20,7 @@ def modulo(tmp_path_factory):
     return mod
 
 
-@pytest.fixture()
+@pytest.fixture
 def inv(modulo):
     """Base de datos limpia en cada prueba."""
     modulo.Base.metadata.drop_all(modulo.engine)
@@ -28,13 +28,13 @@ def inv(modulo):
     return modulo
 
 
-@pytest.fixture()
+@pytest.fixture
 def client(inv):
     inv.app.config["TESTING"] = True
     return inv.app.test_client()
 
 
-@pytest.fixture()
+@pytest.fixture
 def con_datos(inv):
     inv.sembrar_datos_ejemplo()
     return inv
