@@ -238,12 +238,21 @@ def listar_aplicativos():
 
 @app.route("/api/usuarios/<int:usuario_id>/accesos", methods=["GET"])
 def accesos_de_usuario(usuario_id):
+    """Accesos vigentes del usuario. Con ?historial=1 incluye también los revocados (HU-05)."""
+    incluir_revocados = request.args.get("historial") in ("1", "true")
     session = SessionLocal()
     try:
-        accesos = session.query(Acceso).filter_by(usuario_id=usuario_id, fecha_revocado=None).all()
+        consulta = session.query(Acceso).filter_by(usuario_id=usuario_id)
+        if not incluir_revocados:
+            consulta = consulta.filter_by(fecha_revocado=None)
         return jsonify([
-            {"aplicativo_id": a.aplicativo_id, "fecha_otorgado": a.fecha_otorgado.isoformat()}
-            for a in accesos
+            {
+                "aplicativo_id": a.aplicativo_id,
+                "aplicativo": a.aplicativo.nombre,
+                "fecha_otorgado": a.fecha_otorgado.isoformat(),
+                "fecha_revocado": a.fecha_revocado.isoformat() if a.fecha_revocado else None,
+            }
+            for a in consulta.order_by(Acceso.fecha_otorgado).all()
         ])
     finally:
         session.close()
