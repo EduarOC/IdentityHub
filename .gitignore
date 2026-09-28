@@ -14,3 +14,8 @@ sonar-scanner.zip
 
 # Archivos temporales de Office
 ~$*
+
+# Pruebas y cobertura
+.pytest_cache/
+.coverage
+coverage.xml
