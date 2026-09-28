@@ -15,6 +15,10 @@ services:
     buildCommand: "pip install --require-hashes -r inventory-service/requirements.lock"
     startCommand: "cd inventory-service && python app.py"
     envVars:
+      # Render ejecuta app.py directamente (sin el Dockerfile), así que HOST no viene de la
+      # imagen: sin esta variable, Flask escucharía solo en 127.0.0.1 y Render no lo alcanzaría.
+      - key: HOST
+        value: 0.0.0.0
       - key: DATABASE_URL
         fromDatabase:
           name: identityhub-db
