@@ -26,12 +26,11 @@ jobs:
 
       - name: Instalar dependencias (versiones bloqueadas con hash)
         run: |
-          python -m pip install --upgrade pip
-          pip install --require-hashes \
+          pip install --only-binary :all: --require-hashes \
             -r auth-proxy/requirements.lock \
             -r inventory-service/requirements.lock \
             -r legacy-app-demo/requirements.lock
-          pip install -r requirements-dev.txt
+          pip install --only-binary :all: --require-hashes -r requirements-dev.lock
 
       - name: Ejecutar pruebas con cobertura
         run: python -m pytest --cov --cov-config=.coveragerc --cov-report=term --cov-report=xml:coverage.xml
