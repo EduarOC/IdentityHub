@@ -23,15 +23,18 @@ async function cargarUsuarios() {
 
     usuarios.forEach(u => {
         const fila = document.createElement("tr");
-        const esOffboarding = u.estado === "offboarding";
+        const esActivo = u.estado === "activo";
+        const badgeClase = esActivo ? "badge-activo" : "badge-offboarding";
+        const badgeTexto = u.estado.charAt(0).toUpperCase() + u.estado.slice(1);
+        
         fila.innerHTML = `
             <td>${u.nombre}</td>
             <td>${u.correo}</td>
-            <td><span class="badge ${esOffboarding ? 'badge-offboarding' : 'badge-activo'}">${esOffboarding ? 'Offboarding' : 'Activo'}</span></td>
+            <td><span class="badge ${badgeClase}">${badgeTexto}</span></td>
             <td>${u.accesos_activos}</td>
             <td>
-                <button class="btn-offboard" data-id="${u.id}" data-nombre="${u.nombre}" ${esOffboarding ? "disabled" : ""}>
-                    ${esOffboarding ? "Ya procesado" : "Iniciar offboarding"}
+                <button class="btn-offboard" data-id="${u.id}" data-nombre="${u.nombre}" ${!esActivo ? "disabled" : ""}>
+                    ${!esActivo ? "Ya procesado" : "Iniciar offboarding"}
                 </button>
             </td>
         `;

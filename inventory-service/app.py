@@ -264,6 +264,9 @@ def iniciar_offboarding(usuario_id):
         usuario = session.query(Usuario).filter_by(id=usuario_id).first()
         if not usuario:
             return jsonify({"success": False, "error": "Usuario no encontrado"}), 404
+            
+        if usuario.estado in ["offboarding", "inactivo"]:
+            return jsonify({"success": False, "error": f"El usuario ya se encuentra en estado {usuario.estado}"}), 400
 
         accesos_activos = session.query(Acceso).filter_by(usuario_id=usuario_id, fecha_revocado=None).all()
         nombres_apps = []
