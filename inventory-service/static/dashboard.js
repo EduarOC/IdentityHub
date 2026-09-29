@@ -62,7 +62,7 @@ async function ejecutarOffboarding(usuarioId, nombre) {
     if (data.success) {
         const lista = data.aplicativos_revocados.length > 0 ? data.aplicativos_revocados.join(", ") : "ningún acceso activo";
         mostrarToast(`✅ Offboarding de ${nombre} completado. Revocado: ${lista}`);
-        cargarUsuarios();
+        await cargarUsuarios();
     } else {
         mostrarToast(`⚠ ${data.error || "No se pudo completar el offboarding."}`);
     }
