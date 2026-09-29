@@ -120,7 +120,7 @@ def calcular_puntaje_riesgo(alcance_oauth: str, fecha_ultimo_uso):
     return min(100, base + bonus_inactividad)
 
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def panel():
     """Panel visual del servicio de inventario. Consume las mismas APIs JSON ya existentes."""
     return render_template("dashboard.html")
@@ -159,7 +159,7 @@ def importar_apps_descubiertas():
 
     Body esperado: {"apps": [{"nombre": str, "alcance_oauth": str, "fecha_ultimo_uso": "ISO8601" | null}]}
     """
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     apps = data.get("apps", [])
     if not isinstance(apps, list) or len(apps) == 0:
         return jsonify({"success": False, "error": "No se recibieron aplicativos para importar."}), 400
@@ -238,12 +238,21 @@ def listar_aplicativos():
 
 @app.route("/api/usuarios/<int:usuario_id>/accesos", methods=["GET"])
 def accesos_de_usuario(usuario_id):
+    """Accesos vigentes del usuario. Con ?historial=1 incluye también los revocados (HU-05)."""
+    incluir_revocados = request.args.get("historial") in ("1", "true")
     session = SessionLocal()
     try:
-        accesos = session.query(Acceso).filter_by(usuario_id=usuario_id, fecha_revocado=None).all()
+        consulta = session.query(Acceso).filter_by(usuario_id=usuario_id)
+        if not incluir_revocados:
+            consulta = consulta.filter_by(fecha_revocado=None)
         return jsonify([
-            {"aplicativo_id": a.aplicativo_id, "fecha_otorgado": a.fecha_otorgado.isoformat()}
-            for a in accesos
+            {
+                "aplicativo_id": a.aplicativo_id,
+                "aplicativo": a.aplicativo.nombre,
+                "fecha_otorgado": a.fecha_otorgado.isoformat(),
+                "fecha_revocado": a.fecha_revocado.isoformat() if a.fecha_revocado else None,
+            }
+            for a in consulta.order_by(Acceso.fecha_otorgado).all()
         ])
     finally:
         session.close()
@@ -256,7 +265,7 @@ def iniciar_offboarding(usuario_id):
     TODO técnico pendiente: reemplazar la simulación de abajo por la llamada real a la API
     de administración de Keycloak (deshabilitar el usuario) y al auth proxy (invalidar sesión).
     """
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     responsable = data.get("responsable", "desconocido")
 
     session = SessionLocal()

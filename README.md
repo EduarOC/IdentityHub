@@ -1,5 +1,9 @@
 # IdentityHub — Plataforma de Gestión Unificada de Identidad e Inventario de Aplicativos
 
+[![Pruebas y análisis de calidad](https://github.com/EduarOC/IdentityHub/actions/workflows/build.yml/badge.svg)](https://github.com/EduarOC/IdentityHub/actions/workflows/build.yml)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=EduarOC_proyecto-de-grado&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=EduarOC_proyecto-de-grado)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=EduarOC_proyecto-de-grado&metric=coverage)](https://sonarcloud.io/summary/new_code?id=EduarOC_proyecto-de-grado)
+
 Proyecto de Grado — Ingeniería de Sistemas
 Fundación de Educación Superior Nueva América
 
@@ -27,68 +31,104 @@ industria) y aporta valor real en tres capas:
    antepone a aplicaciones legacy o de plan básico, resolviendo la autenticación sin que la
    aplicación protegida necesite ningún cambio.
 2. **Inventario y automatización de accesos**: catálogo de qué usuario tiene acceso a qué
-   aplicativo, detección de licencias pagadas sin uso, y — la funcionalidad de mayor impacto en
+   aplicativo, con el costo de licencia de cada uno, y — la funcionalidad de mayor impacto en
    seguridad real — **revocación centralizada en el offboarding**: cuando alguien sale de la
    empresa, se le retira el acceso a todos los aplicativos desde un solo lugar.
 3. **Descubrimiento de Shadow IT (diferencial frente a la competencia)**: la mayoría de
    plataformas accesibles para PYMES solo gestionan lo que TI ya conoce. IdentityHub además
-   descubre automáticamente aplicativos conectados por OAuth sin aprobación de TI (vía Google
-   Workspace / Microsoft 365), les asigna un puntaje de riesgo explicable, y los incluye en el
+   descubre automáticamente aplicativos conectados por OAuth sin aprobación de TI (conector
+   implementado para Microsoft Entra ID), les asigna un puntaje de riesgo explicable, y los incluye en el
    mismo flujo de offboarding — cerrando un punto ciego que ni los IdP baratos ni las
    plataformas de descubrimiento caras (GAT, DoControl) resuelven juntos. Ver
    `docs/ARQUITECTURA.md`, Decisión 4, para el detalle completo.
 
 ## Estado del proyecto
 
-Este repositorio contiene por ahora el **esqueleto técnico inicial** (arquitectura, Keycloak
-levantado vía Docker, y el servicio de inventario en construcción). La investigación de mercado,
-la justificación académica y las encuestas/entrevistas del primer corte **deben ser elaboradas por
-el equipo** — ver `INVESTIGACION_PENDIENTE.md` para el checklist concreto de qué recopilar.
+| Componente | Estado |
+|---|---|
+| Keycloak (IdP, OIDC) con realm auto-importado | Funciona en local |
+| Auth Reverse Proxy para aplicativos legacy | Funciona en local |
+| Servicio de inventario + panel de administración | Funciona en local |
+| Offboarding con registro de auditoría | Funciona (solo en la base de IdentityHub) |
+| Revocación en Keycloak y cierre de sesión en el proxy | **Pendiente** (RF-08, RF-09) |
+| Conector de Shadow IT para Entra ID | Probado con datos simulados; falta el tenant real (Semana 15) |
+| Despliegue en Render | Inventario y base definidos en `render.yaml`; el resto, pendiente |
+
+## Calidad
+
+- **59 pruebas automatizadas** (pytest) con **100 % de cobertura** del código Python.
+- **SonarQube Cloud:** Quality Gate aprobado; seguridad, confiabilidad y mantenibilidad en A.
+- Cada push a `main` y cada Pull Request corre las pruebas y el análisis en GitHub Actions
+  (`.github/workflows/build.yml`). El análisis automático de SonarCloud debe permanecer apagado.
+- Dependencias con versión exacta y hash verificado (`requirements.lock`); contenedores sin root.
 
 ## Stack técnico
 
-- **Identity Provider:** [Keycloak](https://www.keycloak.org/) (open source, protocolo OIDC/SAML)
-- **Backend de inventario:** Python + Flask (mismo stack que el equipo ya domina)
-- **Base de datos:** PostgreSQL
-- **Orquestación local:** Docker Compose
+- **Identity Provider:** [Keycloak](https://www.keycloak.org/) 25 (open source, OIDC/SAML)
+- **Servicios:** Python 3.12 + Flask (inventario, auth proxy, aplicativo legacy de demostración)
+- **Base de datos:** PostgreSQL 16 (compartida por el inventario y Keycloak)
+- **Orquestación local:** Docker Compose · **Nube:** Render (plan gratuito)
+- **Calidad:** pytest, pytest-cov, SonarQube Cloud, GitHub Actions
 
 ## Estructura del repositorio
 
 ```
-docker-compose.yml       Levanta Keycloak + PostgreSQL + el servicio de inventario en local
-inventory-service/       Backend Flask: catálogo de apps, usuarios, licencias, offboarding
-docs/
-  ARQUITECTURA.md         Diagrama y explicación de los 2 componentes técnicos centrales
-  INVESTIGACION_PENDIENTE.md   Checklist de investigación real que debe hacer el equipo
+auth-proxy/              Auth Reverse Proxy (Flask + Authlib) — protege aplicativos sin SSO
+inventory-service/       Inventario, offboarding, Shadow IT y panel de administración
+legacy-app-demo/         Aplicativo legacy de demostración (solo HTTP Basic)
+discovery-connectors/    Conector de Shadow IT para Microsoft Entra ID (script)
+keycloak-realm/          Realm "identityhub" que Keycloak importa al arrancar
+*/tests/                 Pruebas automatizadas de cada componente
+docs/                    ARQUITECTURA.md (incluye despliegue de Keycloak en Render)
+.github/                 Workflow de CI, plantillas de Issues y Pull Requests
+docker-compose.yml       Entorno local completo
+render.yaml              Despliegue en Render (inventario + base de datos)
+sonar-project.properties Configuración del análisis de SonarCloud
 ```
 
 ## Cómo levantar el entorno local
 
 ```bash
+cp .env.example .env   # solo la primera vez: credenciales de desarrollo local
 docker compose up -d
 ```
 
-Esto levanta Keycloak en `http://localhost:8080` (admin/admin por defecto — cambiar antes de
-cualquier uso real), el servicio de inventario en `http://localhost:5000`, y el auth reverse
-proxy en `http://localhost:9000` (con un aplicativo legacy de demostración detrás, en el puerto
-6000, protegido solo por HTTP Basic Auth — simula un aplicativo real sin soporte de SSO).
+Las contraseñas no están en `docker-compose.yml`: se leen de `.env`, que no se sube al
+repositorio. Si falta alguna, Docker Compose se detiene e indica cuál.
 
-**Panel visual:** abrir `http://localhost:5000` en el navegador muestra el panel de
-administración (catálogo de aplicativos, usuarios con botón de offboarding, y el panel de
-Shadow IT ordenado por riesgo). Arranca con datos de ejemplo ilustrativos — ver
-`docs/INVESTIGACION_PENDIENTE.md` para reemplazarlos por el catálogo real de la empresa.
+| Servicio | URL | Credenciales de prueba |
+|---|---|---|
+| Panel de administración (inventario) | http://localhost:5000 | — |
+| Auth proxy → aplicativo legacy | http://localhost:9000 | `ana.torres` / `identityhub123` |
+| Consola de Keycloak | http://localhost:8080 | las de `KEYCLOAK_ADMIN_PASSWORD` en `.env` |
 
-**Probar el auth reverse proxy:** abrir `http://localhost:9000` redirige al login de Keycloak
-(realm y usuario de prueba ya importados automáticamente — `ana.torres` / `identityhub123`).
-Tras iniciar sesión, se accede al aplicativo legacy de demostración sin haber ingresado ninguna
-credencial propia de esa app.
+Al abrir `http://localhost:9000`, el proxy redirige al login de Keycloak; tras iniciar sesión se
+entra al aplicativo legacy sin ingresar ninguna credencial propia de esa app. El panel arranca con
+datos de ejemplo ilustrativos.
 
-**Descubrimiento de Shadow IT contra la empresa real (Microsoft Entra ID):** ver
-`discovery-connectors/entra_id.py` para las instrucciones completas de configuración (registro
-de app en Entra ID, permisos, admin consent) y cómo ejecutarlo contra el tenant real.
+**Shadow IT contra la empresa real:** ver `discovery-connectors/entra_id.py` para el registro de
+la app en Entra ID, los permisos y el consentimiento de administrador. Solo se ejecuta contra el
+tenant real con aprobación de Seguridad Informática.
+
+## Cómo correr las pruebas
+
+```bash
+pip install --require-hashes -r auth-proxy/requirements.lock -r inventory-service/requirements.lock -r legacy-app-demo/requirements.lock
+pip install --require-hashes -r requirements-dev.lock
+python -m pytest --cov --cov-config=.coveragerc
+```
 
 ## Flujo de trabajo
 
-Este repositorio sigue [GitHub Flow](https://docs.github.com/es/get-started/using-github/github-flow),
-documentado en `CONTRIBUTING.md`. Las plantillas de Issues y Pull Requests ya están configuradas
-en `.github/` y aplican igual que en el proyecto anterior.
+GitHub Flow, documentado en `CONTRIBUTING.md`: una rama por cambio (`feat/`, `fix/`, `docs/`,
+`test/`, `chore/`), Pull Request hacia `main` revisado por otro integrante, y fusión solo con
+las pruebas y el Quality Gate en verde.
+
+**Importante para la trazabilidad:** configura git con el correo **vinculado a tu cuenta de
+GitHub** (GitHub → Settings → Emails). Un correo que no esté ahí hace que los commits aparezcan
+como anónimos en GitHub y en SonarCloud.
+
+```bash
+git config --global user.name "Tu Nombre"
+git config --global user.email "el-correo-de-tu-cuenta-de-github@..."
+```

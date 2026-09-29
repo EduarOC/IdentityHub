@@ -107,7 +107,7 @@ body {
 
 .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11.5px; font-weight: 600; }
 .badge-activo { background: var(--green-soft); color: var(--green); }
-.badge-offboarding { background: #EDEDED; color: #6B7280; }
+.badge-offboarding { background: #EDEDED; color: #4B5563; }
 .badge-nativo { background: var(--green-soft); color: var(--green); }
 .badge-proxy { background: var(--orange-soft); color: var(--orange); }
 .badge-ninguno { background: var(--red-soft); color: var(--red); }
