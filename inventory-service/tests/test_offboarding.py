@@ -47,12 +47,12 @@ def test_offboarding_sin_responsable_queda_desconocido(client, con_datos):
         s.close()
 
 
-def test_offboarding_usuario_sin_accesos(client, con_datos):
+def test_offboarding_usuario_sin_accesos_ya_procesado(client, con_datos):
     ana = _id_de(client, "Ana Torres")
     client.post(f"/api/usuarios/{ana}/offboarding", json={})
     r = client.post(f"/api/usuarios/{ana}/offboarding", json={})
-    assert r.status_code == 200
-    assert r.get_json()["aplicativos_revocados"] == []
+    assert r.status_code == 400
+    assert "ya se encuentra en estado" in r.get_json()["error"]
 
 
 def test_offboarding_usuario_inexistente(client, con_datos):
