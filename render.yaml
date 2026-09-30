@@ -12,8 +12,8 @@ services:
     name: identityhub-inventory
     runtime: python
     plan: free
-    buildCommand: "pip install -r inventory-service/requirements.txt"
-    startCommand: "cd inventory-service && python app.py"
+    buildCommand: "pip install -r inventory-service/requirements.lock"
+    startCommand: "cd inventory-service && gunicorn --bind 0.0.0.0:$PORT app:app"
     envVars:
       - key: DATABASE_URL
         fromDatabase:

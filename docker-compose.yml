@@ -79,6 +79,7 @@ services:
       KEYCLOAK_REALM: identityhub
       PROXY_CLIENT_ID: auth-proxy
       PROXY_CLIENT_SECRET: auth-proxy-dev-secret-cambiar-en-produccion
+      KEYCLOAK_EXTERNAL_URL: http://keycloak:8080
       BACKEND_URL: http://legacy-app-demo:6000
       BACKEND_SERVICE_USER: service-account
       BACKEND_SERVICE_PASSWORD: clave-de-servicio-cambiar
