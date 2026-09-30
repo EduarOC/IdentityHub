@@ -61,6 +61,10 @@ HEADERS_NO_REENVIABLES = {"host", "cookie", "content-length"}
 HEADERS_NO_DEVOLVER = {"content-encoding", "content-length", "transfer-encoding", "connection"}
 
 
+@app.route("/health")
+def health():
+    return "OK"
+
 @app.route("/login")
 def login():
     redirect_uri = url_for("auth_callback", _external=True)
