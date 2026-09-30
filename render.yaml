@@ -1,35 +1,122 @@
-# Blueprint de Render (Infraestructura como Código) para el servicio de inventario de
-# IdentityHub. Sigue el mismo patrón que ya funcionó y se probó en el proyecto anterior
-# (servicio web en Python + base de datos administrada, ambos en el plan gratuito).
+# Blueprint de Render (Infraestructura como Código) para IdentityHub.
+# Despliegue: Render → New → Blueprint → repositorio EduarOC/IdentityHub → rama main.
+# Documentación, límites del plan gratuito y plan de recuperación: IH-ARQ-01, secciones 9 a 12.
 #
-# Keycloak NO está incluido aquí: desplegar una imagen Docker externa (como Keycloak) vía
-# Render Blueprint requiere una sintaxis que no pude verificar contra la documentación
-# actual de Render desde este entorno. Ver docs/ARQUITECTURA.md, sección "Desplegar
-# Keycloak en Render", para el procedimiento manual recomendado (más confiable que
-# adivinar el YAML).
+# IMPORTANTE — URLs públicas: Render asigna https://<nombre-del-servicio>.onrender.com.
+# Si al crear un servicio Render le agrega un sufijo (porque el nombre ya existe), actualizar
+# KC_HOSTNAME, KEYCLOAK_URL y BACKEND_URL, y la URL de retorno del cliente auth-proxy en
+# keycloak-realm/identityhub-realm.json.
+#
+# La región no se puede cambiar después de crear un servicio: todo va en Virginia,
+# la más cercana a Colombia.
+
+envVarGroups:
+  # Credencial que el proxy usa para entrar al aplicativo legacy. Render la genera una
+  # sola vez y la comparten los dos servicios.
+  - name: identityhub-cuenta-servicio
+    envVars:
+      - key: BACKEND_SERVICE_USER
+        value: svc-identityhub
+      - key: BACKEND_SERVICE_PASSWORD
+        generateValue: true
+
 services:
   - type: web
-    name: identityhub-inventory
-    runtime: python
+    name: identityhub-keycloak
+    runtime: docker
     plan: free
-    buildCommand: "pip install --require-hashes -r inventory-service/requirements.lock"
-    startCommand: "cd inventory-service && python app.py"
+    region: virginia
+    dockerfilePath: ./keycloak-realm/Dockerfile
+    dockerContext: ./keycloak-realm
     envVars:
-      # Render ejecuta app.py directamente (sin el Dockerfile), así que HOST no viene de la
-      # imagen: sin esta variable, Flask escucharía solo en 127.0.0.1 y Render no lo alcanzaría.
-      - key: HOST
-        value: 0.0.0.0
+      - key: PORT
+        value: "8080"
+      - key: KC_HOSTNAME
+        value: https://identityhub-keycloak.onrender.com
+      # Render termina HTTPS y reenvía HTTP al contenedor con encabezados X-Forwarded-*.
+      - key: KC_PROXY_HEADERS
+        value: xforwarded
+      - key: KC_HTTP_ENABLED
+        value: "true"
+      - key: KC_DB_URL_HOST
+        fromDatabase:
+          name: identityhub-db
+          property: host
+      - key: KC_DB_URL_PORT
+        fromDatabase:
+          name: identityhub-db
+          property: port
+      - key: KC_DB_URL_DATABASE
+        fromDatabase:
+          name: identityhub-db
+          property: database
+      - key: KC_DB_USERNAME
+        fromDatabase:
+          name: identityhub-db
+          property: user
+      - key: KC_DB_PASSWORD
+        fromDatabase:
+          name: identityhub-db
+          property: password
+      - key: KEYCLOAK_ADMIN
+        value: admin
+      - key: KEYCLOAK_ADMIN_PASSWORD
+        generateValue: true
+      # Límites de memoria probados por David en local para caber en 512 MB.
+      - key: JAVA_OPTS_APPEND
+        value: "-Xms128m -Xmx250m -XX:MaxMetaspaceSize=150m"
+
+  - type: web
+    name: identityhub-auth-proxy
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./auth-proxy/Dockerfile
+    dockerContext: ./auth-proxy
+    envVars:
+      - key: KEYCLOAK_URL
+        value: https://identityhub-keycloak.onrender.com
+      - key: BACKEND_URL
+        value: https://identityhub-legacy.onrender.com
+      # Clave fija para firmar las sesiones: sin ella se pierden en cada reinicio (BUG-004).
+      - key: PROXY_SECRET_KEY
+        generateValue: true
+      # Debe coincidir con el "secret" del cliente auth-proxy en el realm. Se ingresa a mano
+      # en el panel de Render para no escribirlo en este archivo.
+      - key: PROXY_CLIENT_SECRET
+        sync: false
+      - fromGroup: identityhub-cuenta-servicio
+
+  - type: web
+    name: identityhub-legacy
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./legacy-app-demo/Dockerfile
+    dockerContext: ./legacy-app-demo
+    envVars:
+      - fromGroup: identityhub-cuenta-servicio
+
+  - type: web
+    name: identityhub-inventory
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./inventory-service/Dockerfile
+    dockerContext: ./inventory-service
+    envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: identityhub-db
           property: connectionString
       - key: KEYCLOAK_URL
-        sync: false
-        # Se completa manualmente en el dashboard de Render con la URL pública que le
-        # asigne Render al servicio de Keycloak, una vez desplegado (ver docs/ARQUITECTURA.md).
+        value: https://identityhub-keycloak.onrender.com
 
 databases:
+  # Plan gratuito: expira 30 días después de creada y se borra 14 días más tarde, sin
+  # respaldos. Antes de la sustentación, pasarla a Basic o recrearla (IH-ARQ-01, sección 11).
   - name: identityhub-db
     plan: free
+    region: virginia
     databaseName: identityhub
     user: identityhub

@@ -12,10 +12,12 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "redirectUris": [
-        "http://localhost:9000/auth/callback"
+        "http://localhost:9000/auth/callback",
+        "https://identityhub-auth-proxy.onrender.com/auth/callback"
       ],
       "webOrigins": [
-        "http://localhost:9000"
+        "http://localhost:9000",
+        "https://identityhub-auth-proxy.onrender.com"
       ]
     }
   ],

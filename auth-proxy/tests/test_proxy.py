@@ -97,3 +97,12 @@ def test_propaga_errores_del_backend(proxy, sesion_iniciada):
         r = sesion_iniciada.get("/")
     assert r.status_code == 503
     assert r.data == b"caido"
+
+
+def test_detras_de_https_la_url_de_retorno_es_https(proxy, client):
+    # En Render, HTTPS termina antes del contenedor: sin ProxyFix la URL de retorno saldría
+    # con http:// y Keycloak la rechazaría por no coincidir con la registrada.
+    with patch.object(proxy.oauth.keycloak, "authorize_redirect",
+                      return_value=redirect("http://keycloak.test/auth")) as m:
+        client.get("/login", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "identityhub-auth-proxy.onrender.com"})
+    assert m.call_args.args[0] == "https://identityhub-auth-proxy.onrender.com/auth/callback"

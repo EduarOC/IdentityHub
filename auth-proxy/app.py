@@ -16,6 +16,7 @@ import os
 import requests
 from authlib.integrations.flask_client import OAuth
 from flask import Flask, Response, redirect, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Justificación de Seguridad (SonarCloud - CSRF):
 # El auth-proxy actúa como API Gateway transparente hacia aplicativos legacy.
@@ -24,6 +25,9 @@ from flask import Flask, Response, redirect, request, session, url_for
 # intermediados. La mitigación del CSRF es responsabilidad de la aplicación destino.
 app = Flask(__name__)
 app.secret_key = os.environ.get("PROXY_SECRET_KEY") or os.urandom(24).hex()
+# En Render, HTTPS termina en el balanceador y llega HTTP al contenedor. ProxyFix hace que
+# Flask respete X-Forwarded-Proto/Host, para que la URL de retorno a Keycloak sea https://.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 
 KEYCLOAK_URL = os.environ.get("KEYCLOAK_URL", "http://localhost:8080")
 KEYCLOAK_REALM = os.environ.get("KEYCLOAK_REALM", "identityhub")
