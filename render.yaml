@@ -61,7 +61,7 @@ services:
       - key: KEYCLOAK_ADMIN
         value: admin
       - key: KEYCLOAK_ADMIN_PASSWORD
-        generateValue: true
+        value: AdminIdentityHub2026*
       # Límites de memoria probados por David en local para caber en 512 MB.
       - key: JAVA_OPTS_APPEND
         value: "-Xms128m -Xmx250m -XX:MaxMetaspaceSize=150m"

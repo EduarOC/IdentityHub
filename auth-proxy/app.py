@@ -40,16 +40,39 @@ BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:6000")
 BACKEND_SERVICE_USER = os.environ.get("BACKEND_SERVICE_USER", "service-account")
 BACKEND_SERVICE_PASSWORD = os.environ.get("BACKEND_SERVICE_PASSWORD", "change-me")
 
-oauth = OAuth(app)
-oauth.register(
-    name="keycloak",
-    client_id=CLIENT_ID,
-    client_secret=CLIENT_SECRET,
-    server_metadata_url=f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/.well-known/openid-configuration",
-    client_kwargs={"scope": "openid email profile"},
-)
+try:
+    metadata = requests.get(
+        f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/.well-known/openid-configuration",
+        timeout=5,
+    ).json()
+    KEYCLOAK_EXTERNAL_URL = os.environ.get("KEYCLOAK_EXTERNAL_URL", "http://localhost:8080")
+    if KEYCLOAK_EXTERNAL_URL != KEYCLOAK_URL:
+        metadata["issuer"] = metadata["issuer"].replace(KEYCLOAK_URL, KEYCLOAK_EXTERNAL_URL)
+        metadata["authorization_endpoint"] = metadata["authorization_endpoint"].replace(KEYCLOAK_URL, KEYCLOAK_EXTERNAL_URL)
 
-HEADERS_NO_REENVIABLES = {"host", "cookie", "content-length"}
+    oauth = OAuth(app)
+    oauth.register(
+        name="keycloak",
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        server_metadata=metadata,
+        authorize_url=metadata["authorization_endpoint"],
+        access_token_url=metadata["token_endpoint"],
+        jwks_uri=metadata.get("jwks_uri"),
+        userinfo_endpoint=metadata.get("userinfo_endpoint"),
+        client_kwargs={"scope": "openid email profile"},
+    )
+except Exception:
+    oauth = OAuth(app)
+    oauth.register(
+        name="keycloak",
+        client_id=CLIENT_ID,
+        client_secret=CLIENT_SECRET,
+        server_metadata_url=f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/.well-known/openid-configuration",
+        client_kwargs={"scope": "openid email profile"},
+    )
+
+HEADERS_NO_REENVIABLES = {"host", "cookie", "content-length", "accept-encoding"}
 HEADERS_NO_DEVOLVER = {"content-encoding", "content-length", "transfer-encoding", "connection"}
 
 

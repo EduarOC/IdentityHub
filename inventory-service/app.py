@@ -352,9 +352,87 @@ def sembrar_datos_ejemplo():
         session.close()
 
 
+
+def sincronizar_admin_keycloak(clave_fija="AdminIdentityHub2026*"):
+    """
+    Garantiza que el usuario 'admin' de Keycloak en el realm master tenga
+    la contrasea conocida (AdminIdentityHub2026*), actualizando el registro
+    PBKDF2-SHA256 en la tabla 'credential' de la base de datos compartida.
+    """
+    import base64
+    import hashlib
+    import json
+    import os
+    from sqlalchemy import text
+
+    iterations = 27500
+    salt = os.urandom(16)
+    derived = hashlib.pbkdf2_hmac("sha256", clave_fija.encode("utf-8"), salt, iterations, dklen=64)
+    b64_salt = base64.b64encode(salt).decode("ascii")
+    b64_val = base64.b64encode(derived).decode("ascii")
+
+    secret_data = json.dumps({"value": b64_val, "salt": b64_salt})
+    credential_data = json.dumps({"hashIterations": iterations, "algorithm": "pbkdf2-sha256"})
+
+    try:
+        with engine.connect() as conn:
+            user_row = conn.execute(text("SELECT id FROM user_entity WHERE username = 'admin' LIMIT 1")).fetchone()
+            if user_row:
+                admin_id = user_row[0]
+                conn.execute(
+                    text("UPDATE credential SET secret_data = :secret, credential_data = :data WHERE user_id = :uid AND type = 'password'"),
+                    {"secret": secret_data, "data": credential_data, "uid": admin_id}
+                )
+                conn.commit()
+    except Exception as e:
+        app.logger.warning("No se pudo sincronizar admin de Keycloak: %s", e)
+
+
+@app.route("/api/sincronizar-admin-keycloak", methods=["GET"])
+def api_sincronizar_admin():
+    import base64
+    import hashlib
+    import json
+    import os
+    from sqlalchemy import text
+
+    clave = request.args.get("clave", "AdminIdentityHub2026*")
+    iterations = 27500
+    salt = os.urandom(16)
+    derived = hashlib.pbkdf2_hmac("sha256", clave.encode("utf-8"), salt, iterations, dklen=64)
+    b64_salt = base64.b64encode(salt).decode("ascii")
+    b64_val = base64.b64encode(derived).decode("ascii")
+
+    secret_data = json.dumps({"value": b64_val, "salt": b64_salt})
+    credential_data = json.dumps({"hashIterations": iterations, "algorithm": "pbkdf2-sha256"})
+
+    try:
+        with engine.connect() as conn:
+            user_row = conn.execute(text("SELECT id FROM user_entity WHERE username = 'admin' LIMIT 1")).fetchone()
+            if not user_row:
+                return jsonify({"status": "error", "mensaje": "Usuario admin no existe en user_entity"}), 404
+            admin_id = user_row[0]
+            res = conn.execute(
+                text("UPDATE credential SET secret_data = :secret, credential_data = :data WHERE user_id = :uid AND type = 'password'"),
+                {"secret": secret_data, "data": credential_data, "uid": admin_id}
+            )
+            conn.commit()
+            return jsonify({
+                "status": "ok",
+                "mensaje": "Contrasea de admin de Keycloak sincronizada con xito",
+                "usuario": "admin",
+                "clave": clave,
+                "filas_afectadas": res.rowcount
+            })
+    except Exception as e:
+        return jsonify({"status": "error", "detalle": str(e)}), 500
+
+
+
 if __name__ == "__main__":
     init_db()
     sembrar_datos_ejemplo()
+    sincronizar_admin_keycloak()
     port = int(os.environ.get("PORT", 5000))
     host = os.environ.get("HOST", "127.0.0.1")
     app.run(host=host, port=port, debug=os.environ.get("FLASK_DEBUG", "0") == "1")
