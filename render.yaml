@@ -60,8 +60,9 @@ services:
           property: password
       - key: KEYCLOAK_ADMIN
         value: admin
+      # La contraseña de administrador se define a mano en el panel de Render; nunca en este archivo.
       - key: KEYCLOAK_ADMIN_PASSWORD
-        value: AdminIdentityHub2026*
+        sync: false
       # Límites de memoria probados por David en local para caber en 512 MB.
       - key: JAVA_OPTS_APPEND
         value: "-Xms128m -Xmx250m -XX:MaxMetaspaceSize=150m"
