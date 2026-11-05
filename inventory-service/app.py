@@ -2,15 +2,21 @@
 IdentityHub - Servicio de Inventario
 
 Catálogo de aplicativos, usuarios y accesos. Conector dinámico de descubrimiento
-de Shadow IT para Microsoft Entra ID vía Microsoft Graph API y flujo de offboarding.
+de Shadow IT para Microsoft Entra ID vía Microsoft Graph API (soporta Secretos y Certificados)
+y flujo de offboarding centralizado.
 """
+import base64
 import json
 import os
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from datetime import datetime, timedelta, timezone
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 from flask import Flask, jsonify, render_template, request
 from sqlalchemy import (
     Column,
@@ -19,6 +25,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     create_engine,
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
@@ -93,15 +100,17 @@ class EventoOffboarding(Base):
 class ConfiguracionConector(Base):
     """
     Almacena de forma persistente la configuración de los conectores externos de
-    descubrimiento (como Microsoft Entra ID), permitiendo cambiar de tenant fácilmente
-    desde la interfaz gráfica sin modificar código ni reiniciar el servicio.
+    descubrimiento (como Microsoft Entra ID), soportando tanto Secreto como Certificado
+    para permitir cambiar de tenant fácilmente desde la interfaz gráfica.
     """
     __tablename__ = "configuracion_conectores"
     id = Column(Integer, primary_key=True)
     proveedor = Column(String, unique=True, nullable=False, default="microsoft_entra_id")
+    tipo_auth = Column(String, nullable=False, default="secret")  # "secret" o "certificate"
     tenant_id = Column(String, nullable=True)
     client_id = Column(String, nullable=True)
     client_secret = Column(String, nullable=True)
+    client_cert_pem = Column(Text, nullable=True)
     actualizado_en = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -111,14 +120,7 @@ def calcular_puntaje_riesgo(alcance_oauth: str, fecha_ultimo_uso):
 
     Regla simple, pensada para ser defendible y explicable (no una caja negra):
     - Alcance de permisos: mientras más amplio el acceso otorgado, mayor el riesgo base.
-    - Inactividad: un token OAuth que nadie usa hace meses es más peligroso que uno activo,
-      porque es exactamente el patrón de una cuenta de exempleado que nadie revocó (el
-      hallazgo más citado en la investigación de shadow apps).
-
-    Esto es intencionalmente basado en reglas, no en Machine Learning, para la primera
-    versión: es más fácil de explicar y defender en la sustentación. Migrar a un modelo
-    entrenado con datos reales de uso es una mejora natural para el tercer corte, una vez
-    haya suficiente historial.
+    - Inactividad: un token OAuth que nadie usa hace meses es más peligroso que uno activo.
     """
     alcance = (alcance_oauth or "").lower()
 
@@ -139,7 +141,6 @@ def calcular_puntaje_riesgo(alcance_oauth: str, fecha_ultimo_uso):
         elif dias_inactivo > 30:
             bonus_inactividad = 10
     else:
-        # Sin fecha de último uso registrada: se trata como inactividad desconocida, riesgo medio.
         bonus_inactividad = 15
 
     return min(100, base + bonus_inactividad)
@@ -183,18 +184,79 @@ def procesar_importacion_apps(session, apps):
     return importados
 
 
-def obtener_token_entra(tenant_id, client_id, client_secret):
-    """Obtiene un token de aplicación en Microsoft Entra ID vía OAuth 2.0 Client Credentials."""
-    if not all([tenant_id, client_id, client_secret]):
-        raise ValueError("Se requieren Tenant ID, Client ID y Client Secret.")
+def generar_client_assertion(tenant_id, client_id, pem_data):
+    """
+    Genera un JWT client_assertion firmado con RS256 para autenticación basada
+    en Certificado en Microsoft Entra ID según el estándar RFC 7523.
+    """
+    if isinstance(pem_data, str):
+        pem_bytes = pem_data.encode("utf-8")
+    else:
+        pem_bytes = pem_data
+
+    private_key = serialization.load_pem_private_key(pem_bytes, password=None)
+
+    x5t_b64 = None
+    try:
+        cert = x509.load_pem_x509_certificate(pem_bytes)
+        x5t_b64 = base64.urlsafe_b64encode(cert.fingerprint(hashes.SHA1())).decode("ascii").rstrip("=")
+    except Exception:
+        pass
+
+    now = int(datetime.now(timezone.utc).timestamp())
+    header = {"alg": "RS256", "typ": "JWT"}
+    if x5t_b64:
+        header["x5t"] = x5t_b64
+
+    payload = {
+        "aud": f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
+        "iss": client_id,
+        "sub": client_id,
+        "jti": str(uuid.uuid4()),
+        "nbf": now,
+        "exp": now + 300,
+    }
+
+    def b64url(d):
+        return base64.urlsafe_b64encode(d).decode("ascii").rstrip("=")
+
+    h_str = b64url(json.dumps(header).encode("utf-8"))
+    p_str = b64url(json.dumps(payload).encode("utf-8"))
+    sig = b64url(private_key.sign(f"{h_str}.{p_str}".encode("ascii"), padding.PKCS1v15(), hashes.SHA256()))
+
+    return f"{h_str}.{p_str}.{sig}"
+
+
+def obtener_token_entra(tenant_id, client_id, client_secret=None, client_cert_pem=None, tipo_auth="secret"):
+    """
+    Obtiene un token de aplicación en Microsoft Entra ID.
+    Soporta autenticación con Secreto de Cliente o mediante Certificado (RS256 JWT).
+    """
+    if not tenant_id or not client_id:
+        raise ValueError("Se requieren Tenant ID y Client ID.")
 
     url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
-    payload = urllib.parse.urlencode({
-        "client_id": client_id,
-        "client_secret": client_secret,
-        "scope": "https://graph.microsoft.com/.default",
-        "grant_type": "client_credentials",
-    }).encode("utf-8")
+
+    if tipo_auth == "certificate" or (client_cert_pem and not client_secret):
+        if not client_cert_pem:
+            raise ValueError("Se requiere el Certificado / Llave Privada PEM para este tenant.")
+        assertion = generar_client_assertion(tenant_id, client_id, client_cert_pem)
+        payload = urllib.parse.urlencode({
+            "client_id": client_id,
+            "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            "client_assertion": assertion,
+            "scope": "https://graph.microsoft.com/.default",
+            "grant_type": "client_credentials",
+        }).encode("utf-8")
+    else:
+        if not client_secret:
+            raise ValueError("Se requiere el Client Secret.")
+        payload = urllib.parse.urlencode({
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "scope": "https://graph.microsoft.com/.default",
+            "grant_type": "client_credentials",
+        }).encode("utf-8")
 
     req = urllib.request.Request(
         url,
@@ -220,9 +282,9 @@ def obtener_token_entra(tenant_id, client_id, client_secret):
         raise ValueError(f"Error al conectar con Microsoft: {e}")
 
 
-def descubrir_apps_entra(tenant_id, client_id, client_secret):
+def descubrir_apps_entra(tenant_id, client_id, client_secret=None, client_cert_pem=None, tipo_auth="secret"):
     """Consulta las concesiones OAuth reales del tenant y devuelve las apps descubiertas."""
-    token = obtener_token_entra(tenant_id, client_id, client_secret)
+    token = obtener_token_entra(tenant_id, client_id, client_secret, client_cert_pem, tipo_auth)
     graph_base = "https://graph.microsoft.com/v1.0"
 
     req_grants = urllib.request.Request(
@@ -268,11 +330,13 @@ def descubrir_apps_entra(tenant_id, client_id, client_secret):
 def _obtener_credenciales_conector(session):
     """Obtiene las credenciales del conector desde la BD o desde variables de entorno."""
     cfg = session.query(ConfiguracionConector).filter_by(proveedor="microsoft_entra_id").first()
+    tipo_auth = (cfg.tipo_auth if cfg and cfg.tipo_auth else os.environ.get("ENTRA_AUTH_TYPE", "secret")).strip()
     tenant_id = (cfg.tenant_id if cfg and cfg.tenant_id else os.environ.get("ENTRA_TENANT_ID", "")).strip()
     client_id = (cfg.client_id if cfg and cfg.client_id else os.environ.get("ENTRA_CLIENT_ID", "")).strip()
     client_secret = (cfg.client_secret if cfg and cfg.client_secret else os.environ.get("ENTRA_CLIENT_SECRET", "")).strip()
+    client_cert_pem = (cfg.client_cert_pem if cfg and cfg.client_cert_pem else os.environ.get("ENTRA_CERT_PEM", "")).strip()
     actualizado_en = cfg.actualizado_en.isoformat() if (cfg and cfg.actualizado_en) else None
-    return cfg, tenant_id, client_id, client_secret, actualizado_en
+    return cfg, tipo_auth, tenant_id, client_id, client_secret, client_cert_pem, actualizado_en
 
 
 @app.route("/", methods=["GET"])
@@ -300,10 +364,7 @@ def listar_usuarios():
 
 @app.route("/api/discovery/importar", methods=["POST"])
 def importar_apps_descubiertas():
-    """
-    Punto de entrada para importar aplicativos descubiertos (Shadow IT).
-    Acepta una lista extraída externamente o via conector automatizado.
-    """
+    """Punto de entrada para importar aplicativos descubiertos (Shadow IT)."""
     data = request.get_json(silent=True) or {}
     apps = data.get("apps", [])
     if not isinstance(apps, list) or len(apps) == 0:
@@ -319,16 +380,19 @@ def importar_apps_descubiertas():
 
 @app.route("/api/conector/entra-id", methods=["GET"])
 def obtener_config_entra():
-    """Devuelve la configuración actual del conector de Microsoft Entra ID (enmascarando el secreto)."""
+    """Devuelve la configuración actual del conector de Microsoft Entra ID."""
     session = SessionLocal()
     try:
-        _, tenant_id, client_id, client_secret, actualizado_en = _obtener_credenciales_conector(session)
-        configurado = bool(tenant_id and client_id and client_secret)
+        _, tipo_auth, tenant_id, client_id, client_secret, client_cert_pem, actualizado_en = _obtener_credenciales_conector(session)
+        tiene_cred = bool(client_secret or client_cert_pem)
+        configurado = bool(tenant_id and client_id and tiene_cred)
         return jsonify({
             "configurado": configurado,
+            "tipo_auth": tipo_auth,
             "tenant_id": tenant_id,
             "client_id": client_id,
             "tiene_secreto": bool(client_secret),
+            "tiene_certificado": bool(client_cert_pem),
             "actualizado_en": actualizado_en,
         })
     finally:
@@ -337,11 +401,13 @@ def obtener_config_entra():
 
 @app.route("/api/conector/entra-id", methods=["POST"])
 def guardar_config_entra():
-    """Guarda o actualiza las credenciales del tenant en la base de datos para facilitar el cambio entre tenants."""
+    """Guarda o actualiza las credenciales del tenant en la base de datos."""
     data = request.get_json(silent=True) or {}
+    tipo_auth = (data.get("tipo_auth") or "secret").strip()
     tenant_id = (data.get("tenant_id") or "").strip()
     client_id = (data.get("client_id") or "").strip()
     nuevo_secret = (data.get("client_secret") or "").strip()
+    nuevo_pem = (data.get("client_cert_pem") or "").strip()
 
     if not tenant_id or not client_id:
         return jsonify({"success": False, "error": "Tenant ID y Client ID son campos obligatorios."}), 400
@@ -353,11 +419,15 @@ def guardar_config_entra():
             cfg = ConfiguracionConector(proveedor="microsoft_entra_id")
             session.add(cfg)
 
+        cfg.tipo_auth = tipo_auth
         cfg.tenant_id = tenant_id
         cfg.client_id = client_id
-        # Si se envió un nuevo secreto real (no la máscara de visualización)
+
         if nuevo_secret and not nuevo_secret.startswith("••••"):
             cfg.client_secret = nuevo_secret
+        if nuevo_pem and not nuevo_pem.startswith("••••"):
+            cfg.client_cert_pem = nuevo_pem
+
         cfg.actualizado_en = datetime.now(timezone.utc)
         session.commit()
         return jsonify({"success": True, "mensaje": "Configuración de Microsoft Entra ID guardada correctamente."})
@@ -369,28 +439,30 @@ def guardar_config_entra():
 def probar_conexion_entra():
     """Prueba en tiempo real si las credenciales conectan con Microsoft Online y generan un token válido."""
     data = request.get_json(silent=True) or {}
+    tipo_auth = (data.get("tipo_auth") or "").strip()
     tenant_id = (data.get("tenant_id") or "").strip()
     client_id = (data.get("client_id") or "").strip()
     client_secret = (data.get("client_secret") or "").strip()
+    client_cert_pem = (data.get("client_cert_pem") or "").strip()
 
     session = SessionLocal()
     try:
-        _, db_tenant, db_client, db_secret, _ = _obtener_credenciales_conector(session)
+        _, db_auth, db_tenant, db_client, db_secret, db_pem, _ = _obtener_credenciales_conector(session)
+        tipo_auth = tipo_auth or db_auth
         tenant_id = tenant_id or db_tenant
         client_id = client_id or db_client
         if not client_secret or client_secret.startswith("••••"):
             client_secret = db_secret
+        if not client_cert_pem or client_cert_pem.startswith("••••"):
+            client_cert_pem = db_pem
 
-        if not tenant_id or not client_id or not client_secret:
-            return jsonify({
-                "success": False,
-                "error": "Faltan credenciales obligatorias: Tenant ID, Client ID y Client Secret."
-            }), 400
+        if not tenant_id or not client_id:
+            return jsonify({"success": False, "error": "Faltan Tenant ID y Client ID."}), 400
 
-        obtener_token_entra(tenant_id, client_id, client_secret)
+        obtener_token_entra(tenant_id, client_id, client_secret, client_cert_pem, tipo_auth)
         return jsonify({
             "success": True,
-            "mensaje": "¡Conexión exitosa! Las credenciales son válidas y Microsoft Graph otorgó el token de acceso correctamente."
+            "mensaje": "¡Conexión exitosa! Las credenciales son válidas y Microsoft Graph autorizó el acceso correctamente."
         })
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
@@ -405,14 +477,15 @@ def sincronizar_conector_entra():
     """Ejecuta el descubrimiento en vivo contra Microsoft Graph API e importa las apps al inventario."""
     session = SessionLocal()
     try:
-        _, tenant_id, client_id, client_secret, _ = _obtener_credenciales_conector(session)
-        if not tenant_id or not client_id or not client_secret:
+        _, tipo_auth, tenant_id, client_id, client_secret, client_cert_pem, _ = _obtener_credenciales_conector(session)
+        tiene_cred = bool(client_secret or client_cert_pem)
+        if not tenant_id or not client_id or not tiene_cred:
             return jsonify({
                 "success": False,
-                "error": "El conector no está configurado. Por favor configura el Tenant ID, Client ID y Client Secret."
+                "error": "El conector no está configurado. Por favor configura el Tenant ID, Client ID y Secreto o Certificado."
             }), 400
 
-        apps = descubrir_apps_entra(tenant_id, client_id, client_secret)
+        apps = descubrir_apps_entra(tenant_id, client_id, client_secret, client_cert_pem, tipo_auth)
         if not apps:
             return jsonify({
                 "success": True,
@@ -460,8 +533,7 @@ def listar_por_riesgo():
 
 @app.route("/api/aplicativos", methods=["GET"])
 def listar_aplicativos():
-    """Catálogo de aplicativos registrados manualmente por TI (excluye los descubiertos vía
-    Shadow IT, que tienen su propia vista en /api/aplicativos/riesgo)."""
+    """Catálogo de aplicativos registrados manualmente por TI."""
     session = SessionLocal()
     try:
         apps = session.query(Aplicativo).filter_by(origen="manual").all()
@@ -500,11 +572,7 @@ def accesos_de_usuario(usuario_id):
 
 @app.route("/api/usuarios/<int:usuario_id>/offboarding", methods=["POST"])
 def iniciar_offboarding(usuario_id):
-    """
-    Punto de entrada del flujo crítico del proyecto (ver docs/ARQUITECTURA.md).
-    TODO técnico pendiente: reemplazar la simulación de abajo por la llamada real a la API
-    de administración de Keycloak (deshabilitar el usuario) y al auth proxy (invalidar sesión).
-    """
+    """Punto de entrada del flujo crítico del proyecto."""
     data = request.get_json(silent=True) or {}
     responsable = data.get("responsable", "desconocido")
 
@@ -544,15 +612,11 @@ def init_db():
 
 
 def sembrar_datos_ejemplo():
-    """
-    Datos de ejemplo puramente ilustrativos para poder ver el panel funcionando de inmediato.
-    NO son datos reales de ninguna empresa -- deben reemplazarse por el catálogo real una vez
-    el equipo complete el diagnóstico de docs/INVESTIGACION_PENDIENTE.md.
-    """
+    """Datos de ejemplo puramente ilustrativos."""
     session = SessionLocal()
     try:
         if session.query(Aplicativo).count() > 0:
-            return  # ya hay datos (reales o de una corrida anterior); no sobreescribir
+            return
 
         slack = Aplicativo(nombre="Slack", tipo_soporte_sso="nativo", costo_licencia_mensual=8.0)
         facturacion = Aplicativo(nombre="Sistema de Facturación Legacy", tipo_soporte_sso="proxy", costo_licencia_mensual=25.0)
@@ -573,7 +637,6 @@ def sembrar_datos_ejemplo():
         ])
         session.commit()
 
-        # Ejemplos de Shadow IT descubierto, con distinto nivel de riesgo para mostrar el ordenamiento.
         ahora = datetime.now(timezone.utc)
         ejemplos_shadow_it = [
             {"nombre": "Canva (conectado por Marketing)", "alcance_oauth": "Acceso completo a Drive y perfil", "fecha_ultimo_uso": ahora - timedelta(days=200)},

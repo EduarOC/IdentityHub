@@ -1,4 +1,4 @@
-"""RF-10 / HU-09: pruebas de la configuración dinámica y sincronización de Microsoft Entra ID."""
+"""RF-10 / HU-09: pruebas de la configuración dinámica y sincronización de Microsoft Entra ID (Secretos y Certificados)."""
 from unittest.mock import patch
 
 
@@ -8,11 +8,12 @@ def test_obtener_config_vacia_por_defecto(client):
     data = r.get_json()
     assert data["configurado"] is False
     assert data["tiene_secreto"] is False
+    assert data["tiene_certificado"] is False
 
 
-def test_guardar_config_y_recuperar(client):
-    # Guardar
+def test_guardar_config_secreto_y_recuperar(client):
     r = client.post("/api/conector/entra-id", json={
+        "tipo_auth": "secret",
         "tenant_id": "tenant-test-123",
         "client_id": "client-test-456",
         "client_secret": "secret-super-seguro",
@@ -20,14 +21,32 @@ def test_guardar_config_y_recuperar(client):
     assert r.status_code == 200
     assert r.get_json()["success"] is True
 
-    # Recuperar
     r = client.get("/api/conector/entra-id")
     data = r.get_json()
     assert data["configurado"] is True
+    assert data["tipo_auth"] == "secret"
     assert data["tenant_id"] == "tenant-test-123"
     assert data["client_id"] == "client-test-456"
     assert data["tiene_secreto"] is True
     assert "client_secret" not in data
+
+
+def test_guardar_config_certificado_y_recuperar(client):
+    r = client.post("/api/conector/entra-id", json={
+        "tipo_auth": "certificate",
+        "tenant_id": "tenant-corp",
+        "client_id": "client-corp",
+        "client_cert_pem": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----",
+    })
+    assert r.status_code == 200
+    assert r.get_json()["success"] is True
+
+    r = client.get("/api/conector/entra-id")
+    data = r.get_json()
+    assert data["configurado"] is True
+    assert data["tipo_auth"] == "certificate"
+    assert data["tiene_certificado"] is True
+    assert "client_cert_pem" not in data
 
 
 def test_guardar_con_campos_vacios_da_error(client):
@@ -39,23 +58,25 @@ def test_guardar_con_campos_vacios_da_error(client):
 def test_probar_conexion_exitosa(client, inv):
     with patch.object(inv, "obtener_token_entra", return_value="fake-token-123"):
         r = client.post("/api/conector/entra-id/probar", json={
+            "tipo_auth": "certificate",
             "tenant_id": "tenant-1",
             "client_id": "client-1",
-            "client_secret": "secret-1",
+            "client_cert_pem": "dummy-pem",
         })
     assert r.status_code == 200
     assert r.get_json()["success"] is True
 
 
 def test_probar_conexion_error(client, inv):
-    with patch.object(inv, "obtener_token_entra", side_effect=ValueError("Credenciales inválidas")):
+    with patch.object(inv, "obtener_token_entra", side_effect=ValueError("Certificado no válido")):
         r = client.post("/api/conector/entra-id/probar", json={
+            "tipo_auth": "certificate",
             "tenant_id": "tenant-1",
             "client_id": "client-1",
-            "client_secret": "secret-1",
+            "client_cert_pem": "dummy-pem",
         })
     assert r.status_code == 400
-    assert "Credenciales inválidas" in r.get_json()["error"]
+    assert "Certificado no válido" in r.get_json()["error"]
 
 
 def test_sincronizar_sin_configurar_retorna_400(client):
@@ -65,14 +86,13 @@ def test_sincronizar_sin_configurar_retorna_400(client):
 
 
 def test_sincronizar_importa_apps_y_calcula_riesgo(client, inv):
-    # 1. Configurar
     client.post("/api/conector/entra-id", json={
+        "tipo_auth": "certificate",
         "tenant_id": "tenant-corp",
         "client_id": "client-corp",
-        "client_secret": "secret-corp",
+        "client_cert_pem": "dummy-pem",
     })
 
-    # 2. Simular descubrimiento desde Entra ID
     apps_mock = [
         {"nombre": "Trello Corporate", "alcance_oauth": "Acceso completo a Drive", "fecha_ultimo_uso": None},
         {"nombre": "Grammarly", "alcance_oauth": "Lectura básica", "fecha_ultimo_uso": None},
@@ -86,7 +106,6 @@ def test_sincronizar_importa_apps_y_calcula_riesgo(client, inv):
     assert data["success"] is True
     assert data["total_descubiertas"] == 2
 
-    # Verificar que aparecen en /api/aplicativos/riesgo
     riesgos = client.get("/api/aplicativos/riesgo").get_json()
     nombres = [a["nombre"] for a in riesgos]
     assert "Trello Corporate" in nombres
