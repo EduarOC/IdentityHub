@@ -284,7 +284,7 @@ async function sincronizarEntraID() {
 
     btn.disabled = true;
     spinner.textContent = "⏳";
-    mostrarToast("🔄 Conectando a Microsoft Graph API y analizando permisos OAuth...");
+    mostrarToast("🔄 Sincronizando directorio, catálogo y Shadow IT desde Microsoft Entra ID...");
 
     try {
         const res = await fetch("/api/conector/entra-id/sincronizar", {
@@ -294,8 +294,7 @@ async function sincronizarEntraID() {
 
         if (res.ok && data.success) {
             mostrarToast(`✅ ${data.mensaje}`);
-            await cargarShadowIT();
-            await cargarAplicativos();
+            await cargarTodo();
         } else {
             if (res.status === 400 && data.error && (data.error.includes("no está configurado") || data.error.includes("Se requiere"))) {
                 abrirModalTenant();
