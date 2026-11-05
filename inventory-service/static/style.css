@@ -131,6 +131,17 @@ body {
     border-color: #CAD5E2;
 }
 
+.table-wrap {
+    max-height: 460px;
+    overflow-y: auto;
+}
+.table-wrap thead th {
+    position: sticky;
+    top: 0;
+    background: var(--card);
+    z-index: 2;
+}
+
 .data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .data-table th {
     text-align: left;
