@@ -135,6 +135,18 @@ async function cargarShadowIT() {
 // Funcionalidades de Configuración y Sincronización con Entra ID
 // -------------------------------------------------------------
 
+function toggleModoAuth(modo) {
+    const groupCert = document.getElementById("field-group-cert");
+    const groupSecret = document.getElementById("field-group-secret");
+    if (modo === "certificate") {
+        groupCert.style.display = "flex";
+        groupSecret.style.display = "none";
+    } else {
+        groupCert.style.display = "none";
+        groupSecret.style.display = "flex";
+    }
+}
+
 async function abrirModalTenant() {
     const modal = document.getElementById("modal-tenant");
     const statusBox = document.getElementById("status-box");
@@ -147,14 +159,24 @@ async function abrirModalTenant() {
             const data = await res.json();
             document.getElementById("cfg-tenant-id").value = data.tenant_id || "";
             document.getElementById("cfg-client-id").value = data.client_id || "";
+
+            const modo = data.tipo_auth || (data.tiene_certificado ? "certificate" : "secret");
+            if (modo === "certificate") {
+                document.getElementById("mode-cert").checked = true;
+                toggleModoAuth("certificate");
+            } else {
+                document.getElementById("mode-secret").checked = true;
+                toggleModoAuth("secret");
+            }
+
+            if (data.tiene_certificado) {
+                document.getElementById("cfg-client-cert").value = "•••••••••••••••• (Certificado y Llave Privada configurados)";
+                document.getElementById("hint-cert").innerHTML = "✅ Certificado configurado previamente. Carga uno nuevo solo si deseas reemplazarlo.";
+            }
+
             if (data.tiene_secreto) {
                 document.getElementById("cfg-client-secret").value = "••••••••••••••••";
-                document.getElementById("hint-secret").innerHTML =
-                    "✅ Secreto configurado previamente. Déjalo así para conservarlo o escribe uno nuevo para actualizarlo.";
-            } else {
-                document.getElementById("cfg-client-secret").value = "";
-                document.getElementById("hint-secret").innerHTML =
-                    "Requiere permiso de aplicación <code>Directory.Read.All</code> con consentimiento de administrador.";
+                document.getElementById("hint-secret").innerHTML = "✅ Secreto configurado previamente. Escribe uno nuevo solo si deseas reemplazarlo.";
             }
         }
     } catch (e) {
@@ -171,14 +193,17 @@ function cerrarModalTenant() {
 async function probarConexionTenant() {
     const tenantId = document.getElementById("cfg-tenant-id").value.trim();
     const clientId = document.getElementById("cfg-client-id").value.trim();
+    const modo = document.getElementById("mode-cert").checked ? "certificate" : "secret";
+    const certPem = document.getElementById("cfg-client-cert").value.trim();
     const secret = document.getElementById("cfg-client-secret").value.trim();
+
     const statusBox = document.getElementById("status-box");
     const spinner = document.getElementById("test-spinner");
     const btn = document.getElementById("btn-probar-conexion");
 
     statusBox.style.display = "block";
     statusBox.className = "status-box info";
-    statusBox.textContent = "Conectando con login.microsoftonline.com...";
+    statusBox.textContent = "Conectando con Microsoft Entra ID...";
     btn.disabled = true;
     spinner.textContent = "⏳";
 
@@ -187,8 +212,10 @@ async function probarConexionTenant() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+                tipo_auth: modo,
                 tenant_id: tenantId,
                 client_id: clientId,
+                client_cert_pem: certPem,
                 client_secret: secret
             })
         });
@@ -213,6 +240,8 @@ async function probarConexionTenant() {
 async function guardarConfigTenant() {
     const tenantId = document.getElementById("cfg-tenant-id").value.trim();
     const clientId = document.getElementById("cfg-client-id").value.trim();
+    const modo = document.getElementById("mode-cert").checked ? "certificate" : "secret";
+    const certPem = document.getElementById("cfg-client-cert").value.trim();
     const secret = document.getElementById("cfg-client-secret").value.trim();
     const btn = document.getElementById("btn-guardar-tenant");
 
@@ -227,8 +256,10 @@ async function guardarConfigTenant() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
+                tipo_auth: modo,
                 tenant_id: tenantId,
                 client_id: clientId,
+                client_cert_pem: certPem,
                 client_secret: secret
             })
         });
@@ -266,9 +297,9 @@ async function sincronizarEntraID() {
             await cargarShadowIT();
             await cargarAplicativos();
         } else {
-            if (res.status === 400 && data.error && data.error.includes("no está configurado")) {
+            if (res.status === 400 && data.error && (data.error.includes("no está configurado") || data.error.includes("Se requiere"))) {
                 abrirModalTenant();
-                mostrarToast("⚠️ Por favor configura el Tenant ID y credenciales primero.");
+                mostrarToast("⚠️ Por favor configura el Tenant y credenciales en el modal.");
             } else {
                 mostrarToast(`❌ ${data.error || "Fallo en la sincronización con Microsoft Graph."}`);
             }
@@ -294,6 +325,23 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("btn-probar-conexion")?.addEventListener("click", probarConexionTenant);
     document.getElementById("btn-guardar-tenant")?.addEventListener("click", guardarConfigTenant);
     document.getElementById("btn-sincronizar-entra")?.addEventListener("click", sincronizarEntraID);
+
+    // Conmutador de modo de autenticación (Certificado vs Secreto)
+    document.getElementById("mode-cert")?.addEventListener("change", () => toggleModoAuth("certificate"));
+    document.getElementById("mode-secret")?.addEventListener("change", () => toggleModoAuth("secret"));
+
+    // Lector de archivo PEM
+    const inputPem = document.getElementById("input-pem-file");
+    inputPem?.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            document.getElementById("cfg-client-cert").value = evt.target.result;
+            mostrarToast(`📁 Archivo ${file.name} cargado correctamente.`);
+        };
+        reader.readAsText(file);
+    });
 
     // Cerrar modal al hacer clic en el backdrop
     document.getElementById("modal-tenant")?.addEventListener("click", (e) => {

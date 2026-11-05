@@ -99,25 +99,53 @@
             </div>
             <div class="modal-body">
                 <p class="modal-desc">
-                    Ingresa las credenciales de la aplicación registrada en el <strong>Microsoft Entra admin center</strong> de la empresa. Puedes cambiar de tenant en cualquier momento.
+                    Ingresa las credenciales de la app en <strong>Microsoft Entra ID</strong>. Soporta autenticación con Certificado (empresas con políticas estrictas) o Secreto de cliente.
                 </p>
+
+                <div class="form-group">
+                    <label>Método de Autenticación del Tenant</label>
+                    <div class="auth-toggle">
+                        <label class="auth-tab">
+                            <input type="radio" name="auth_mode" value="certificate" id="mode-cert" checked>
+                            <span>📜 Certificado / Llave Privada (Activos y Finanzas)</span>
+                        </label>
+                        <label class="auth-tab">
+                            <input type="radio" name="auth_mode" value="secret" id="mode-secret">
+                            <span>🔑 Secreto de Cliente</span>
+                        </label>
+                    </div>
+                </div>
 
                 <div class="form-group">
                     <label for="cfg-tenant-id">Directory (Tenant) ID</label>
                     <input type="text" id="cfg-tenant-id" placeholder="Ej. 8f6b1234-abcd-5678-9012-3456789abcde" class="form-input" spellcheck="false">
-                    <small class="form-help">ID del directorio de la organización (pestaña Overview de la app en Entra ID).</small>
+                    <small class="form-help">Id. del directorio de la organización (pestaña Overview en Entra ID).</small>
                 </div>
 
                 <div class="form-group">
                     <label for="cfg-client-id">Application (Client) ID</label>
                     <input type="text" id="cfg-client-id" placeholder="Ej. 3d2a9876-ef01-2345-6789-abcdef012345" class="form-input" spellcheck="false">
-                    <small class="form-help">ID único de la aplicación registrada.</small>
+                    <small class="form-help">Id. único de la aplicación registrada.</small>
                 </div>
 
-                <div class="form-group">
+                <!-- Campo para Certificado / Llave PEM -->
+                <div class="form-group" id="field-group-cert">
+                    <div class="field-label-row">
+                        <label for="cfg-client-cert">Llave Privada y Certificado (.pem)</label>
+                        <label class="btn-upload-file">
+                            📁 Cargar archivo .pem
+                            <input type="file" id="input-pem-file" accept=".pem,.key,.cer" style="display: none;">
+                        </label>
+                    </div>
+                    <textarea id="cfg-client-cert" rows="5" placeholder="Pega el contenido del archivo IdentityHub_Completo.pem o cárgalo con el botón de arriba" class="form-input form-textarea" spellcheck="false"></textarea>
+                    <small class="form-help" id="hint-cert">Usa el archivo <code>IdentityHub_Completo.pem</code> generado en tu carpeta Descargas.</small>
+                </div>
+
+                <!-- Campo para Secreto de Cliente -->
+                <div class="form-group" id="field-group-secret" style="display: none;">
                     <label for="cfg-client-secret">Client Secret (Valor del secreto)</label>
                     <input type="password" id="cfg-client-secret" placeholder="Ingresa el secreto generado" class="form-input" spellcheck="false">
-                    <small class="form-help" id="hint-secret">Requiere permiso de aplicación <code>Directory.Read.All</code> con consentimiento de administrador otorgado.</small>
+                    <small class="form-help" id="hint-secret">Para organizaciones donde los secretos no están bloqueados por directiva.</small>
                 </div>
 
                 <div class="status-box" id="status-box" style="display: none;"></div>
