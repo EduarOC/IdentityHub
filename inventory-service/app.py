@@ -27,6 +27,7 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    text,
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
@@ -327,8 +328,32 @@ def descubrir_apps_entra(tenant_id, client_id, client_secret=None, client_cert_p
     return apps
 
 
+def migrar_columnas_conector():
+    """Garantiza que las columnas nuevas existan en la tabla de conectores en PostgreSQL y SQLite."""
+    try:
+        with engine.connect() as conn:
+            if "postgres" in str(engine.url):
+                conn.execute(text("ALTER TABLE configuracion_conectores ADD COLUMN IF NOT EXISTS tipo_auth VARCHAR DEFAULT 'secret'"))
+                conn.execute(text("ALTER TABLE configuracion_conectores ADD COLUMN IF NOT EXISTS client_cert_pem TEXT"))
+                conn.commit()
+            else:
+                try:
+                    conn.execute(text("ALTER TABLE configuracion_conectores ADD COLUMN tipo_auth VARCHAR DEFAULT 'secret'"))
+                    conn.commit()
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("ALTER TABLE configuracion_conectores ADD COLUMN client_cert_pem TEXT"))
+                    conn.commit()
+                except Exception:
+                    pass
+    except Exception as e:
+        app.logger.warning("Aviso en migración de columnas: %s", e)
+
+
 def _obtener_credenciales_conector(session):
     """Obtiene las credenciales del conector desde la BD o desde variables de entorno."""
+    migrar_columnas_conector()
     cfg = session.query(ConfiguracionConector).filter_by(proveedor="microsoft_entra_id").first()
     tipo_auth = (cfg.tipo_auth if cfg and cfg.tipo_auth else os.environ.get("ENTRA_AUTH_TYPE", "secret")).strip()
     tenant_id = (cfg.tenant_id if cfg and cfg.tenant_id else os.environ.get("ENTRA_TENANT_ID", "")).strip()
@@ -609,6 +634,7 @@ def iniciar_offboarding(usuario_id):
 
 def init_db():
     Base.metadata.create_all(engine)
+    migrar_columnas_conector()
 
 
 def sembrar_datos_ejemplo():
