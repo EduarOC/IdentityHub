@@ -25,6 +25,28 @@ import conectores
 # cambian datos si llegan desde otro origen. Por eso aquí no se agrega un token CSRF.
 app = Flask(__name__)
 
+# Cabeceras de seguridad HTTP (OWASP ZAP, ASVS V14.4). La CSP está hecha a la medida del panel:
+# solo scripts y estilos propios, más las fuentes de Google; sin código en línea ni iframes.
+# El auth-proxy respeta estas cabeceras y no las reemplaza por las suyas.
+CABECERAS_SEGURIDAD = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; "
+        "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; "
+        "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+}
+
+
+@app.after_request
+def agregar_cabeceras_de_seguridad(response):
+    for nombre, valor in CABECERAS_SEGURIDAD.items():
+        response.headers.setdefault(nombre, valor)
+    return response
+
+
 # Rutas que responden sin la cuenta de servicio: solo la verificación de salud de Render.
 RUTAS_PUBLICAS = {"/salud"}
 

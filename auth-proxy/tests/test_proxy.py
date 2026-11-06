@@ -221,3 +221,32 @@ def test_archivos_estaticos_sin_sesion_piden_login(client):
     r = client.get("/static/dashboard.js")
     assert r.status_code == 302
     assert r.headers["Location"].endswith("/login")
+
+
+def test_respuestas_del_proxy_llevan_cabeceras_de_seguridad(client):
+    r = client.get("/facturas")  # sin sesión: redirección al login, generada por el proxy
+    assert r.headers["X-Frame-Options"] == "DENY"
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert r.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
+    assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
+    assert "Strict-Transport-Security" not in r.headers  # sin HTTPS no se anuncia HSTS
+
+
+def test_el_legacy_sin_cabeceras_queda_cubierto_por_el_proxy(proxy, sesion_iniciada):
+    with patch.object(proxy.requests, "request", return_value=_respuesta_backend()):
+        r = sesion_iniciada.get("/facturas")
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+    assert "default-src 'self'" in r.headers["Content-Security-Policy"]
+
+
+def test_el_proxy_respeta_la_csp_del_aplicativo(proxy, sesion_iniciada):
+    propia = "default-src 'self'; font-src https://fonts.gstatic.com"
+    backend = _respuesta_backend(headers={"Content-Type": "text/html", "Content-Security-Policy": propia})
+    with patch.object(proxy.requests, "request", return_value=backend):
+        r = sesion_iniciada.get("/")
+    assert r.headers.getlist("Content-Security-Policy") == [propia]
+
+
+def test_hsts_solo_con_https(proxy, client, monkeypatch):
+    monkeypatch.setitem(proxy.app.config, "SESSION_COOKIE_SECURE", True)
+    assert client.get("/facturas").headers["Strict-Transport-Security"].startswith("max-age=31536000")
