@@ -6,7 +6,8 @@ app.py decide qué guardar con lo que devuelve, así la lógica de Microsoft Gra
 probar sin red y sin base.
 
 Microsoft Entra ID usa el flujo client credentials con una app registrada por el
-administrador del tenant y el permiso de aplicación Directory.Read.All (solo lectura).
+administrador del tenant y tres permisos de aplicación de solo lectura, los mínimos para lo que
+se consulta (PERMISOS_ENTRA). Directory.Read.All también sirve, pero lee todo el directorio.
 Ver docs/CONECTORES.md para los pasos de registro.
 """
 import base64
@@ -21,6 +22,14 @@ from cryptography.fernet import Fernet, InvalidToken
 GRAPH = "https://graph.microsoft.com/v1.0"
 LOGIN = "https://login.microsoftonline.com"
 TIMEOUT = 20
+# Permisos de aplicación de Microsoft Graph que necesita el conector, uno por tipo de consulta.
+# Mínimo privilegio (ASVS V1.4.3): no se pide Directory.Read.All, que abarca grupos, dispositivos,
+# roles y el resto del directorio.
+PERMISO_USUARIOS = "User.Read.All"
+PERMISO_APLICACIONES = "Application.Read.All"
+PERMISO_CONCESIONES = "DelegatedPermissionGrant.Read.All"
+PERMISOS_ENTRA = (PERMISO_USUARIOS, PERMISO_APLICACIONES, PERMISO_CONCESIONES)
+
 # Parámetros OData de Microsoft Graph.
 SELECT, TOP, MAXIMO = "$select", "$top", "999"
 # Tope de páginas por consulta: evita un ciclo infinito si Graph devolviera siempre nextLink.
@@ -89,36 +98,45 @@ def _token(tenant_id, client_id, client_secret):
     return resp.json()["access_token"]
 
 
-def _get(token, url, params=None):
+def _get(token, url, params=None, permiso=None):
     try:
         resp = requests.get(url, params=params, timeout=TIMEOUT,
                             headers={"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"})
     except requests.RequestException as exc:
         raise ErrorConector("Se perdió la conexión con Microsoft Graph durante la consulta.") from exc
     if resp.status_code == 403:
-        raise ErrorConector("Faltan permisos: la app necesita el permiso de aplicación Directory.Read.All "
+        falta = permiso or ", ".join(PERMISOS_ENTRA)
+        raise ErrorConector(f"Faltan permisos: la app necesita el permiso de aplicación {falta} "
                             "con consentimiento de administrador.")
     if not resp.ok:
         raise ErrorConector(f"Microsoft Graph respondió con un error ({resp.status_code}).")
     return resp.json()
 
 
-def _todas_las_paginas(token, url, params=None):
-    datos = _get(token, url, params)
+def _todas_las_paginas(token, url, params=None, permiso=None):
+    datos = _get(token, url, params, permiso)
     elementos = list(datos.get("value", []))
     for _ in range(MAX_PAGINAS):
         siguiente = datos.get("@odata.nextLink")
         if not siguiente:
             break
-        datos = _get(token, siguiente)  # nextLink ya trae los parámetros
+        datos = _get(token, siguiente, permiso=permiso)  # nextLink ya trae los parámetros
         elementos.extend(datos.get("value", []))
     return elementos
 
 
 def probar_entra(tenant_id, client_id, client_secret):
-    """Obtiene un token y lee el nombre del tenant. Devuelve el nombre visible de la organización."""
+    """Obtiene un token y comprueba cada permiso con una consulta mínima, para que un permiso
+    faltante se detecte al conectar y no a mitad de la sincronización. Devuelve el nombre del
+    tenant, o su ID si la app no puede leer los datos de la organización (no hace falta)."""
     token = _token(tenant_id, client_id, client_secret)
-    organizaciones = _get(token, f"{GRAPH}/organization", {SELECT: "id,displayName"}).get("value", [])
+    for ruta, permiso in (("/users", PERMISO_USUARIOS), ("/servicePrincipals", PERMISO_APLICACIONES),
+                          ("/oauth2PermissionGrants", PERMISO_CONCESIONES)):
+        _get(token, f"{GRAPH}{ruta}", {TOP: "1"}, permiso)
+    try:
+        organizaciones = _get(token, f"{GRAPH}/organization", {SELECT: "id,displayName"}).get("value", [])
+    except ErrorConector:
+        organizaciones = []
     return organizaciones[0].get("displayName", tenant_id) if organizaciones else tenant_id
 
 
@@ -140,7 +158,7 @@ def _leer_usuarios(token):
             "activo": bool(u.get("accountEnabled", True)),
         }
         for u in _todas_las_paginas(token, f"{GRAPH}/users", {
-            SELECT: "id,displayName,mail,userPrincipalName,accountEnabled", TOP: MAXIMO})
+            SELECT: "id,displayName,mail,userPrincipalName,accountEnabled", TOP: MAXIMO}, PERMISO_USUARIOS)
         if u.get("id") and (u.get("mail") or u.get("userPrincipalName"))
     ]
 
@@ -148,7 +166,8 @@ def _leer_usuarios(token):
 def _leer_empresariales(token):
     return _todas_las_paginas(token, f"{GRAPH}/servicePrincipals", {
         "$filter": "tags/any(t:t eq 'WindowsAzureActiveDirectoryIntegratedApp')",
-        SELECT: "id,appId,displayName,preferredSingleSignOnMode", TOP: MAXIMO, "$count": "true"})
+        SELECT: "id,appId,displayName,preferredSingleSignOnMode", TOP: MAXIMO, "$count": "true"},
+        PERMISO_APLICACIONES)
 
 
 def _leer_asignaciones(token, empresariales):
@@ -156,7 +175,8 @@ def _leer_asignaciones(token, empresariales):
         {"usuario_id": asignacion["principalId"], "aplicativo_id": sp["id"]}
         for sp in empresariales
         for asignacion in _todas_las_paginas(token, f"{GRAPH}/servicePrincipals/{sp['id']}/appRoleAssignedTo",
-                                             {SELECT: "principalId,principalType", TOP: MAXIMO})
+                                             {SELECT: "principalId,principalType", TOP: MAXIMO},
+                                             PERMISO_APLICACIONES)
         if asignacion.get("principalType") == "User"
     ]
 
@@ -164,12 +184,13 @@ def _leer_asignaciones(token, empresariales):
 def _leer_concesiones(token, nombres):
     """Permisos OAuth delegados. `nombres` ({id: nombre}) se completa con las apps que falten."""
     concesiones = []
-    for grant in _todas_las_paginas(token, f"{GRAPH}/oauth2PermissionGrants", {TOP: MAXIMO}):
+    for grant in _todas_las_paginas(token, f"{GRAPH}/oauth2PermissionGrants", {TOP: MAXIMO}, PERMISO_CONCESIONES):
         cliente = grant.get("clientId")
         if not cliente:
             continue
         if cliente not in nombres:
-            datos_sp = _get(token, f"{GRAPH}/servicePrincipals/{cliente}", {SELECT: "id,displayName"})
+            datos_sp = _get(token, f"{GRAPH}/servicePrincipals/{cliente}", {SELECT: "id,displayName"},
+                            PERMISO_APLICACIONES)
             nombres[cliente] = datos_sp.get("displayName") or cliente
         concesiones.append({
             "aplicativo_id": cliente,

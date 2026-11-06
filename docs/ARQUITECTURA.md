@@ -142,9 +142,10 @@ concesiones OAuth reales del tenant — resolviendo el nombre de cada aplicativo
 `servicePrincipals`. El resultado se envía a `/api/discovery/importar`, el mismo endpoint ya
 construido y probado.
 
-Requiere que un administrador de Entra ID de la empresa registre una aplicación con permiso
-`Directory.Read.All` (de solo lectura) y otorgue *admin consent* — instrucciones paso a paso al
-inicio del archivo `discovery-connectors/entra_id.py`.
+Requiere que un administrador de Entra ID de la empresa registre una aplicación con los permisos
+de solo lectura `User.Read.All`, `Application.Read.All` y `DelegatedPermissionGrant.Read.All`
+(mínimo privilegio; no `Directory.Read.All`) y otorgue *admin consent*. Los pasos están en
+`docs/CONECTORES.md`.
 
 **Limitación documentada, no oculta:** Microsoft Graph no expone la fecha de último uso
 directamente en `oauth2PermissionGrants`. Obtenerla requiere correlacionar con
