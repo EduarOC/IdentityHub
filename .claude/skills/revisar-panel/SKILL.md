@@ -12,7 +12,7 @@ El panel es una herramienta de operación: lo usa un administrador de TI para ve
 - `inventory-service/templates/dashboard.html`: estructura. Las secciones son indicadores (KPI), usuarios (`#tabla-usuarios`), catálogo (`#tabla-aplicativos`) y Shadow IT (`#shadow-grid`).
 - `inventory-service/static/style.css`: los colores y medidas viven como variables en `:root` (`--navy`, `--orange`, `--red`, `--green`, `--ink`, `--ink-soft`…). Usa siempre esas variables; si hace falta un color nuevo, agrégalo ahí con nombre semántico.
 - `inventory-service/static/dashboard.js`: pinta los datos de `/api/usuarios`, `/api/aplicativos` y `/api/aplicativos/riesgo`, y llama a `POST /api/usuarios/{id}/offboarding`. No cambies la forma de esas respuestas desde el panel: las pruebas de `inventory-service/tests` y el conector dependen de ellas.
-- La identidad visual institucional (FESNA) es azul `#0A499C` y naranja `#FD531E`; el panel usa su propia paleta navy/naranja. Mantén la coherencia con la que ya existe salvo que el usuario pida otra.
+- El panel usa su propia paleta navy/naranja (tokens en `static/style.css`). Mantén la coherencia con la que ya existe salvo que el usuario pida otra.
 
 ## Flujo
 

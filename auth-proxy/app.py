@@ -53,12 +53,13 @@ BACKEND_URL = os.environ.get("BACKEND_URL", "http://localhost:6000")
 BACKEND_SERVICE_USER = os.environ.get("BACKEND_SERVICE_USER", "service-account")
 BACKEND_SERVICE_PASSWORD = os.environ.get("BACKEND_SERVICE_PASSWORD", "change-me")
 
+KEYCLOAK_EXTERNAL_URL = os.environ.get("KEYCLOAK_EXTERNAL_URL", "http://localhost:8080")
+
 try:
     metadata = requests.get(
         f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/.well-known/openid-configuration",
         timeout=5,
     ).json()
-    KEYCLOAK_EXTERNAL_URL = os.environ.get("KEYCLOAK_EXTERNAL_URL", "http://localhost:8080")
     if KEYCLOAK_EXTERNAL_URL != KEYCLOAK_URL:
         metadata["issuer"] = metadata["issuer"].replace(KEYCLOAK_URL, KEYCLOAK_EXTERNAL_URL)
         metadata["authorization_endpoint"] = metadata["authorization_endpoint"].replace(KEYCLOAK_URL, KEYCLOAK_EXTERNAL_URL)
@@ -139,18 +140,31 @@ def auth_callback():
     return redirect("/")
 
 
+def _url_fin_sesion():
+    """URL de cierre de sesión de Keycloak. Si el proxy arrancó antes que Keycloak (pasa en
+    Render al desplegar todo junto), se consulta ahora en lugar de quedar desactivada."""
+    if FIN_SESION_URL:
+        return FIN_SESION_URL
+    try:
+        url = oauth.keycloak.load_server_metadata().get("end_session_endpoint")
+    except Exception:
+        return None
+    return url.replace(KEYCLOAK_URL, KEYCLOAK_EXTERNAL_URL) if url else None
+
+
 @app.route("/logout", methods=["GET"])
 def logout():
     id_token = session.get("id_token")
     session.clear()
-    if not FIN_SESION_URL:
+    fin_sesion = _url_fin_sesion()
+    if not fin_sesion:
         return redirect("/login")
     # Cierra también la sesión de Keycloak: si solo se borrara la del proxy, el siguiente /login
     # entraría sin pedir contraseña (riesgo en equipos compartidos, HU-03).
     parametros = {"client_id": CLIENT_ID, "post_logout_redirect_uri": url_for("login", _external=True)}
     if id_token:
         parametros["id_token_hint"] = id_token
-    return redirect(f"{FIN_SESION_URL}?{urlencode(parametros)}")
+    return redirect(f"{fin_sesion}?{urlencode(parametros)}")
 
 
 def _mismo_origen():

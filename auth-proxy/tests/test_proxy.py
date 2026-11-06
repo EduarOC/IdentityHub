@@ -104,8 +104,8 @@ def test_detras_de_https_la_url_de_retorno_es_https(proxy, client):
     # con http:// y Keycloak la rechazaría por no coincidir con la registrada.
     with patch.object(proxy.oauth.keycloak, "authorize_redirect",
                       return_value=redirect("http://keycloak.test/auth")) as m:
-        client.get("/login", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "identityhub-auth-proxy.onrender.com"})
-    assert m.call_args.args[0] == "https://identityhub-auth-proxy.onrender.com/auth/callback"
+        client.get("/login", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "identityhub-gateway.onrender.com"})
+    assert m.call_args.args[0] == "https://identityhub-gateway.onrender.com/auth/callback"
 
 
 # ---------------------------------------------------------------- rol obligatorio, CSRF y cierre de sesión
@@ -189,3 +189,21 @@ def test_logout_cierra_tambien_la_sesion_de_keycloak(proxy, client, monkeypatch)
     assert "post_logout_redirect_uri=http%3A%2F%2Flocalhost%2Flogin" in destino
     with client.session_transaction() as s:
         assert "usuario" not in s
+
+
+def test_logout_consulta_keycloak_si_el_proxy_arranco_antes(proxy, client, monkeypatch):
+    # En Render los proxies pueden arrancar antes que Keycloak: la URL se pide al cerrar sesión.
+    monkeypatch.setattr(proxy, "FIN_SESION_URL", None)
+    monkeypatch.setattr(proxy, "KEYCLOAK_URL", "http://keycloak:8080")
+    monkeypatch.setattr(proxy, "KEYCLOAK_EXTERNAL_URL", "https://sso.test")
+    metadata = {"end_session_endpoint": "http://keycloak:8080/realms/identityhub/protocol/openid-connect/logout"}
+    with patch.object(proxy.oauth.keycloak, "load_server_metadata", return_value=metadata):
+        r = client.get("/logout")
+    assert r.headers["Location"].startswith("https://sso.test/realms/identityhub/protocol/openid-connect/logout?")
+
+
+def test_logout_sin_keycloak_disponible_vuelve_al_login(proxy, client, monkeypatch):
+    monkeypatch.setattr(proxy, "FIN_SESION_URL", None)
+    with patch.object(proxy.oauth.keycloak, "load_server_metadata", side_effect=OSError("caído")):
+        r = client.get("/logout")
+    assert r.headers["Location"].endswith("/login")

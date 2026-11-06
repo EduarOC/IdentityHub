@@ -4,6 +4,9 @@
 FROM quay.io/keycloak/keycloak:25.0 AS builder
 ENV KC_DB=postgres
 ENV KC_HEALTH_ENABLED=true
+# Un solo servidor: caché local en vez de clúster (JGroups/Infinispan distribuido), que en
+# Render buscaba otros nodos por la red y consumía memoria y hilos sin necesidad.
+ENV KC_CACHE=local
 RUN /opt/keycloak/bin/kc.sh build
 
 # Etapa 2: imagen final con el realm de IdentityHub, que se importa al arrancar.

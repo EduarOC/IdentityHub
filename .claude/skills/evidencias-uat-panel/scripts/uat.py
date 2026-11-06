@@ -19,8 +19,8 @@ from playwright.sync_api import sync_playwright
 ENTORNOS = {
     # El panel del inventario se abre por su propio proxy (inventory-proxy), que pide login.
     "local": {"proxy": "http://localhost:9000", "inventario": "http://localhost:9100"},
-    "render": {"proxy": "https://identityhub-auth-proxy.onrender.com",
-               "inventario": "https://identityhub-inventory-proxy.onrender.com"},
+    "render": {"proxy": "https://identityhub-gateway.onrender.com",
+               "inventario": "https://identityhub-panel.onrender.com"},
 }
 MODIFICAN_DATOS = {"CP-U07", "CP-U09"}
 OCULTAR = ("#tabla-usuarios td:nth-child(1), #tabla-usuarios td:nth-child(2) "
