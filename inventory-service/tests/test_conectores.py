@@ -69,7 +69,8 @@ def test_listado_inicial_muestra_el_catalogo_sin_configurar(client):
     conectores = client.get("/api/conectores").get_json()
     assert [c["tipo"] for c in conectores] == ["entra_id", "google_workspace", "keycloak"]
     entra = conectores[0]
-    assert entra["disponible"] is True and entra["estado"] == "desconectado"
+    assert entra["disponible"] is True
+    assert entra["estado"] == "desconectado"
     assert entra["tiene_secreto"] is False
     assert all(c["disponible"] is False for c in conectores[1:])
 
@@ -78,7 +79,8 @@ def test_configurar_guarda_el_secreto_cifrado_y_nunca_lo_devuelve(client, inv):
     r = _configurar(client)
     assert r.status_code == 200
     assert SECRETO not in r.get_data(as_text=True)
-    assert r.get_json()["tiene_secreto"] is True and r.get_json()["estado"] == "pendiente"
+    assert r.get_json()["tiene_secreto"] is True
+    assert r.get_json()["estado"] == "pendiente"
     assert SECRETO not in client.get("/api/conectores").get_data(as_text=True)
     with inv.SessionLocal() as s:
         guardado = s.query(inv.Conector).one()
@@ -160,10 +162,12 @@ def test_probar_correcto_deja_el_conector_conectado(client, inv):
     _configurar(client)
     with patch.object(inv.conectores, "probar_entra", return_value="Contoso S.A.S.") as m:
         r = client.post("/api/conectores/entra_id/probar")
-    assert r.status_code == 200 and r.get_json()["nombre_tenant"] == "Contoso S.A.S."
+    assert r.status_code == 200
+    assert r.get_json()["nombre_tenant"] == "Contoso S.A.S."
     assert m.call_args.args == (TENANT, CLIENTE, SECRETO)
     entra = _entra_id(client)
-    assert entra["estado"] == "conectado" and entra["nombre_tenant"] == "Contoso S.A.S."
+    assert entra["estado"] == "conectado"
+    assert entra["nombre_tenant"] == "Contoso S.A.S."
 
 
 def test_probar_fallido_guarda_el_error_sin_detalles_internos(client, inv):
@@ -188,7 +192,8 @@ def test_sincronizar_trae_usuarios_aplicativos_accesos_y_shadow_it(client, inv):
     assert r.status_code == 202
 
     entra = _entra_id(client)
-    assert entra["estado"] == "conectado" and entra["ultima_sincronizacion"]
+    assert entra["estado"] == "conectado"
+    assert entra["ultima_sincronizacion"]
     assert entra["resumen"] == {"usuarios": 2, "aplicativos": 1, "shadow_it": 1,
                                 "accesos_nuevos": 2, "accesos_revocados": 0}
 
@@ -201,7 +206,8 @@ def test_sincronizar_trae_usuarios_aplicativos_accesos_y_shadow_it(client, inv):
     assert [(a["nombre"], a["origen"], a["tipo_soporte_sso"]) for a in catalogo] == [("Salesforce", "entra_id", "nativo")]
 
     shadow = client.get("/api/aplicativos/riesgo").get_json()
-    assert len(shadow) == 1 and shadow[0]["nombre"] == "Canva"
+    assert len(shadow) == 1
+    assert shadow[0]["nombre"] == "Canva"
     assert shadow[0]["alcance_oauth"] == "Files.ReadWrite.All User.Read"
     assert shadow[0]["puntaje_riesgo"] == 85  # permiso amplio (70) + sin fecha de uso (15)
 
@@ -234,7 +240,8 @@ def test_resincronizar_marca_revocados_los_accesos_que_ya_no_existen(client, inv
     assert _entra_id(client)["resumen"]["accesos_revocados"] == 2
     with inv.SessionLocal() as s:
         accesos = s.query(inv.Acceso).all()
-        assert len(accesos) == 2 and all(a.fecha_revocado for a in accesos)
+        assert len(accesos) == 2
+        assert all(a.fecha_revocado for a in accesos)
 
 
 def test_sincronizar_no_toca_accesos_registrados_a_mano(client, con_datos):
@@ -252,7 +259,8 @@ def test_sincronizacion_con_error_de_microsoft_deja_el_mensaje(client, inv):
     with patch.object(inv.conectores, "extraer_entra", side_effect=error):
         client.post("/api/conectores/entra_id/sincronizar")
     entra = _entra_id(client)
-    assert entra["estado"] == "error" and entra["ultimo_error"] == "Faltan permisos: Directory.Read.All"
+    assert entra["estado"] == "error"
+    assert entra["ultimo_error"] == "Faltan permisos: Directory.Read.All"
     with inv.SessionLocal() as s:
         assert s.query(inv.Usuario).count() == 0
 
@@ -292,7 +300,8 @@ def test_reinicio_durante_la_sincronizacion_libera_el_estado(client, inv):
         s.commit()
     inv._recuperar_sincronizaciones_interrumpidas()
     entra = _entra_id(client)
-    assert entra["estado"] == "error" and "reinicio" in entra["ultimo_error"]
+    assert entra["estado"] == "error"
+    assert "reinicio" in entra["ultimo_error"]
 
 
 # ------------------------------------------------------------------ desconectar
@@ -302,7 +311,9 @@ def test_desconectar_borra_credenciales_y_conserva_los_datos(client, inv):
     r = client.delete("/api/conectores/entra_id")
     assert r.status_code == 200
     entra = _entra_id(client)
-    assert entra["estado"] == "desconectado" and entra["tiene_secreto"] is False and entra["tenant_id"] is None
+    assert entra["estado"] == "desconectado"
+    assert entra["tiene_secreto"] is False
+    assert entra["tenant_id"] is None
     with inv.SessionLocal() as s:
         assert s.query(inv.Usuario).count() == 2
         assert s.query(inv.Acceso).count() == 2

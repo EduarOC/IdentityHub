@@ -20,6 +20,8 @@ from cryptography.fernet import Fernet, InvalidToken
 GRAPH = "https://graph.microsoft.com/v1.0"
 LOGIN = "https://login.microsoftonline.com"
 TIMEOUT = 20
+# Parámetros OData de Microsoft Graph.
+SELECT, TOP, MAXIMO = "$select", "$top", "999"
 # Tope de páginas por consulta: evita un ciclo infinito si Graph devolviera siempre nextLink.
 MAX_PAGINAS = 200
 
@@ -115,7 +117,7 @@ def _todas_las_paginas(token, url, params=None):
 def probar_entra(tenant_id, client_id, client_secret):
     """Obtiene un token y lee el nombre del tenant. Devuelve el nombre visible de la organización."""
     token = _token(tenant_id, client_id, client_secret)
-    organizaciones = _get(token, f"{GRAPH}/organization", {"$select": "id,displayName"}).get("value", [])
+    organizaciones = _get(token, f"{GRAPH}/organization", {SELECT: "id,displayName"}).get("value", [])
     return organizaciones[0].get("displayName", tenant_id) if organizaciones else tenant_id
 
 
@@ -126,6 +128,55 @@ def _tipo_sso(service_principal):
     if modo in ("password", "notsupported") or not modo:
         return "ninguno"
     return "proxy"
+
+
+def _leer_usuarios(token):
+    return [
+        {
+            "id": u["id"],
+            "nombre": (u.get("displayName") or u.get("userPrincipalName") or "").strip(),
+            "correo": (u.get("mail") or u.get("userPrincipalName") or "").strip().lower(),
+            "activo": bool(u.get("accountEnabled", True)),
+        }
+        for u in _todas_las_paginas(token, f"{GRAPH}/users", {
+            SELECT: "id,displayName,mail,userPrincipalName,accountEnabled", TOP: MAXIMO})
+        if u.get("id") and (u.get("mail") or u.get("userPrincipalName"))
+    ]
+
+
+def _leer_empresariales(token):
+    return _todas_las_paginas(token, f"{GRAPH}/servicePrincipals", {
+        "$filter": "tags/any(t:t eq 'WindowsAzureActiveDirectoryIntegratedApp')",
+        SELECT: "id,appId,displayName,preferredSingleSignOnMode", TOP: MAXIMO, "$count": "true"})
+
+
+def _leer_asignaciones(token, empresariales):
+    return [
+        {"usuario_id": asignacion["principalId"], "aplicativo_id": sp["id"]}
+        for sp in empresariales
+        for asignacion in _todas_las_paginas(token, f"{GRAPH}/servicePrincipals/{sp['id']}/appRoleAssignedTo",
+                                             {SELECT: "principalId,principalType", TOP: MAXIMO})
+        if asignacion.get("principalType") == "User"
+    ]
+
+
+def _leer_concesiones(token, nombres):
+    """Permisos OAuth delegados. `nombres` ({id: nombre}) se completa con las apps que falten."""
+    concesiones = []
+    for grant in _todas_las_paginas(token, f"{GRAPH}/oauth2PermissionGrants", {TOP: MAXIMO}):
+        cliente = grant.get("clientId")
+        if not cliente:
+            continue
+        if cliente not in nombres:
+            datos_sp = _get(token, f"{GRAPH}/servicePrincipals/{cliente}", {SELECT: "id,displayName"})
+            nombres[cliente] = datos_sp.get("displayName") or cliente
+        concesiones.append({
+            "aplicativo_id": cliente,
+            "nombre": nombres[cliente],
+            "alcance": (grant.get("scope") or "").strip(),
+            "usuario_id": grant.get("principalId") if grant.get("consentType") == "Principal" else None,
+        })
+    return concesiones
 
 
 def extraer_entra(tenant_id, client_id, client_secret):
@@ -141,49 +192,11 @@ def extraer_entra(tenant_id, client_id, client_secret):
     Limitación conocida: las asignaciones hechas a grupos no se expanden a sus miembros.
     """
     token = _token(tenant_id, client_id, client_secret)
-
-    usuarios = [
-        {
-            "id": u["id"],
-            "nombre": (u.get("displayName") or u.get("userPrincipalName") or "").strip(),
-            "correo": (u.get("mail") or u.get("userPrincipalName") or "").strip().lower(),
-            "activo": bool(u.get("accountEnabled", True)),
-        }
-        for u in _todas_las_paginas(token, f"{GRAPH}/users", {
-            "$select": "id,displayName,mail,userPrincipalName,accountEnabled", "$top": "999"})
-        if u.get("id") and (u.get("mail") or u.get("userPrincipalName"))
-    ]
-
-    empresariales = _todas_las_paginas(token, f"{GRAPH}/servicePrincipals", {
-        "$filter": "tags/any(t:t eq 'WindowsAzureActiveDirectoryIntegratedApp')",
-        "$select": "id,appId,displayName,preferredSingleSignOnMode", "$top": "999", "$count": "true"})
-    aplicativos = [
-        {"id": sp["id"], "nombre": sp.get("displayName") or sp["id"], "sso": _tipo_sso(sp)}
-        for sp in empresariales
-    ]
-
-    asignaciones = []
-    for sp in empresariales:
-        for asignacion in _todas_las_paginas(token, f"{GRAPH}/servicePrincipals/{sp['id']}/appRoleAssignedTo", {
-                "$select": "principalId,principalType", "$top": "999"}):
-            if asignacion.get("principalType") == "User":
-                asignaciones.append({"usuario_id": asignacion["principalId"], "aplicativo_id": sp["id"]})
-
+    empresariales = _leer_empresariales(token)
     nombres = {sp["id"]: sp.get("displayName") or sp["id"] for sp in empresariales}
-    concesiones = []
-    for grant in _todas_las_paginas(token, f"{GRAPH}/oauth2PermissionGrants", {"$top": "999"}):
-        cliente = grant.get("clientId")
-        if not cliente:
-            continue
-        if cliente not in nombres:
-            datos_sp = _get(token, f"{GRAPH}/servicePrincipals/{cliente}", {"$select": "id,displayName"})
-            nombres[cliente] = datos_sp.get("displayName") or cliente
-        concesiones.append({
-            "aplicativo_id": cliente,
-            "nombre": nombres[cliente],
-            "alcance": (grant.get("scope") or "").strip(),
-            "usuario_id": grant.get("principalId") if grant.get("consentType") == "Principal" else None,
-        })
-
-    return {"usuarios": usuarios, "aplicativos": aplicativos,
-            "asignaciones": asignaciones, "concesiones": concesiones}
+    return {
+        "usuarios": _leer_usuarios(token),
+        "aplicativos": [{"id": sp["id"], "nombre": nombres[sp["id"]], "sso": _tipo_sso(sp)} for sp in empresariales],
+        "asignaciones": _leer_asignaciones(token, empresariales),
+        "concesiones": _leer_concesiones(token, nombres),
+    }

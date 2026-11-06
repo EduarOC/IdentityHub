@@ -365,6 +365,37 @@ function boton(texto, clase, accion, etiqueta) {
     return b;
 }
 
+function detallesConector(c) {
+    const detalles = [];
+    if (c.nombre_tenant) detalles.push(el("p", { clase: "conector-meta", texto: `Tenant: ${c.nombre_tenant}` }));
+    if (c.ultima_sincronizacion) {
+        detalles.push(el("p", { clase: "conector-meta", texto: `Última sincronización: ${fechaHora(c.ultima_sincronizacion)}` }));
+    }
+    if (c.resumen) detalles.push(el("p", { clase: "conector-meta", texto: textoResumen(c.resumen) }));
+    if (c.ultimo_error) detalles.push(el("p", { clase: "conector-error", texto: c.ultimo_error, atributos: { role: "status" } }));
+    return detalles;
+}
+
+function accionesConector(c) {
+    if (!c.disponible) return [];  // la tarjeta solo anuncia lo que viene
+    if (c.estado === "desconectado") {
+        return [boton("Conectar", "btn-primario", () => abrirConfiguracion(c), `Conectar ${c.nombre}`)];
+    }
+    const sincronizando = c.estado === "sincronizando";
+    let principal;
+    if (c.estado === "pendiente") {
+        principal = boton("Probar conexión", "btn-primario", b => probarYSincronizar(c, b));
+    } else {
+        principal = boton(sincronizando ? "Sincronizando…" : "Sincronizar ahora", "btn-primario", b => sincronizarConector(c, b));
+        principal.disabled = sincronizando;
+    }
+    const configurar = boton("Configurar", "btn-secundario", () => abrirConfiguracion(c), `Configurar ${c.nombre}`);
+    const desconectar = boton("Desconectar", "btn-enlace", b => desconectarConector(c, b), `Desconectar ${c.nombre}`);
+    configurar.disabled = sincronizando;
+    desconectar.disabled = sincronizando;
+    return [principal, configurar, desconectar];
+}
+
 function tarjetaConector(c) {
     const estado = c.disponible ? (ESTADO_CONECTOR[c.estado] || ESTADO_CONECTOR.desconectado) : { texto: "Próximamente", clase: "badge-offboarding" };
     const cabecera = el("div", { clase: "conector-cabecera" }, [
@@ -374,39 +405,11 @@ function tarjetaConector(c) {
             el("span", { clase: `badge ${estado.clase}`, texto: estado.texto }),
         ]),
     ]);
-
-    const detalles = [];
-    if (c.nombre_tenant) detalles.push(el("p", { clase: "conector-meta", texto: `Tenant: ${c.nombre_tenant}` }));
-    if (c.ultima_sincronizacion) {
-        detalles.push(el("p", { clase: "conector-meta", texto: `Última sincronización: ${fechaHora(c.ultima_sincronizacion)}` }));
-    }
-    if (c.resumen) detalles.push(el("p", { clase: "conector-meta", texto: textoResumen(c.resumen) }));
-    if (c.ultimo_error) detalles.push(el("p", { clase: "conector-error", texto: c.ultimo_error, atributos: { role: "status" } }));
-
-    const acciones = [];
-    if (!c.disponible) {
-        // Sin acciones: la tarjeta solo anuncia lo que viene.
-    } else if (c.estado === "desconectado") {
-        acciones.push(boton("Conectar", "btn-primario", () => abrirConfiguracion(c), `Conectar ${c.nombre}`));
-    } else {
-        const sincronizando = c.estado === "sincronizando";
-        if (c.estado === "pendiente") {
-            acciones.push(boton("Probar conexión", "btn-primario", b => probarYSincronizar(c, b)));
-        } else {
-            const sincronizar = boton(sincronizando ? "Sincronizando…" : "Sincronizar ahora", "btn-primario", b => sincronizarConector(c, b));
-            sincronizar.disabled = sincronizando;
-            acciones.push(sincronizar);
-        }
-        const configurar = boton("Configurar", "btn-secundario", () => abrirConfiguracion(c), `Configurar ${c.nombre}`);
-        const desconectar = boton("Desconectar", "btn-enlace", b => desconectarConector(c, b), `Desconectar ${c.nombre}`);
-        configurar.disabled = desconectar.disabled = sincronizando;
-        acciones.push(configurar, desconectar);
-    }
-
+    const acciones = accionesConector(c);
     return el("article", { clase: `conector${c.disponible ? "" : " conector-proximo"}` }, [
         cabecera,
         el("p", { clase: "conector-descripcion", texto: c.descripcion }),
-        ...detalles,
+        ...detallesConector(c),
         acciones.length ? el("div", { clase: "conector-acciones" }, acciones) : el("span"),
     ]);
 }
@@ -426,20 +429,25 @@ async function cargarConectores() {
     vigilarSincronizacion();
 }
 
+async function revisarSincronizacion() {
+    const antes = new Map(conectores.map(c => [c.tipo, c.estado]));
+    await cargarConectores();
+    const terminados = conectores.filter(c => antes.get(c.tipo) === "sincronizando" && c.estado !== "sincronizando");
+    for (const c of terminados) {
+        if (c.estado === "conectado") {
+            mostrarToast(`${c.nombre} sincronizado: ${textoResumen(c.resumen)}.`);
+            await cargarTodo();
+        } else {
+            mostrarToast(`La sincronización de ${c.nombre} falló. Revisa el mensaje en la tarjeta.`, "error");
+        }
+    }
+}
+
 function vigilarSincronizacion() {
     const enCurso = conectores.some(c => c.estado === "sincronizando");
     if (enCurso && !sondeo) {
-        sondeo = setInterval(async () => {
-            const antes = new Map(conectores.map(c => [c.tipo, c.estado]));
-            await cargarConectores();
-            conectores.filter(c => antes.get(c.tipo) === "sincronizando" && c.estado !== "sincronizando").forEach(c => {
-                if (c.estado === "conectado") {
-                    mostrarToast(`${c.nombre} sincronizado: ${textoResumen(c.resumen)}.`);
-                    cargarTodo();
-                } else {
-                    mostrarToast(`La sincronización de ${c.nombre} falló. Revisa el mensaje en la tarjeta.`, "error");
-                }
-            });
+        sondeo = setInterval(() => {
+            revisarSincronizacion().catch(error => console.error("No se pudo revisar la sincronización:", error));
         }, 3000);
     } else if (!enCurso && sondeo) {
         clearInterval(sondeo);
@@ -484,12 +492,12 @@ async function guardarConfiguracion(evento) {
         document.getElementById("config-conector").close();
         mostrarToast(`Conectado a ${prueba.nombre_tenant} · iniciando la primera sincronización…`);
         await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}/sincronizar`, "POST");
-    } catch (fallo) {
-        console.error("No se pudo conectar:", fallo);
+    } catch (error_) {
+        console.error("No se pudo conectar:", error_);
         if (document.getElementById("config-conector").open) {
-            error.textContent = fallo.mensaje || "No se pudo guardar la configuración. Intenta de nuevo.";
+            error.textContent = error_.mensaje || "No se pudo guardar la configuración. Intenta de nuevo.";
         } else {
-            mostrarToast(fallo.mensaje || "No se pudo iniciar la sincronización.", "error");
+            mostrarToast(error_.mensaje || "No se pudo iniciar la sincronización.", "error");
         }
     } finally {
         guardar.disabled = false;
@@ -504,8 +512,8 @@ async function probarYSincronizar(c, b) {
     try {
         const prueba = await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}/probar`, "POST");
         mostrarToast(`Conectado a ${prueba.nombre_tenant}`);
-    } catch (fallo) {
-        mostrarToast(fallo.mensaje || "La prueba de conexión falló.", "error");
+    } catch (error_) {
+        mostrarToast(error_.mensaje || "La prueba de conexión falló.", "error");
     }
     await cargarConectores();
 }
@@ -515,8 +523,8 @@ async function sincronizarConector(c, b) {
     b.textContent = "Sincronizando…";
     try {
         await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}/sincronizar`, "POST");
-    } catch (fallo) {
-        mostrarToast(fallo.mensaje || "No se pudo iniciar la sincronización.", "error");
+    } catch (error_) {
+        mostrarToast(error_.mensaje || "No se pudo iniciar la sincronización.", "error");
     }
     await cargarConectores();
 }
@@ -528,8 +536,8 @@ async function desconectarConector(c, b) {
     try {
         await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}`, "DELETE");
         mostrarToast(`${c.nombre} desconectado. El inventario se conserva.`);
-    } catch (fallo) {
-        mostrarToast(fallo.mensaje || "No se pudo desconectar.", "error");
+    } catch (error_) {
+        mostrarToast(error_.mensaje || "No se pudo desconectar.", "error");
     }
     await cargarConectores();
 }
@@ -573,7 +581,7 @@ document.addEventListener("DOMContentLoaded", () => {
     prepararConfiguracion();
     mostrarVista();
     window.addEventListener("hashchange", mostrarVista);
-    cargarConectores();
+    cargarConectores().catch(error => console.error("No se pudieron cargar las integraciones:", error));
     cargarSesion().catch(error => console.error("No se pudo leer la sesión:", error));
     cargarTodo().catch(() => mostrarToast("No se pudo cargar el panel. Recarga la página.", "error"));
 });

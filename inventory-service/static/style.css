@@ -49,8 +49,9 @@ body {
     color: var(--ice); text-decoration: none; font-size: 14px; font-weight: 500;
     padding: 6px 12px; border-radius: 8px;
 }
-.pestana:hover { color: white; background: rgba(255, 255, 255, 0.08); }
-.pestana[aria-current="page"] { color: white; background: rgba(255, 255, 255, 0.14); }
+/* Fondos sólidos (no transparencias) para que el contraste con el texto blanco sea medible. */
+.pestana:hover { color: white; background: #2A3470; }
+.pestana[aria-current="page"] { color: white; background: #343F7E; }
 .pestana:focus-visible { outline: 2px solid white; outline-offset: 2px; }
 .sesion { margin-left: auto; display: flex; align-items: baseline; gap: 14px; font-size: 13px; color: var(--ice); min-width: 0; }
 .sesion[hidden] { display: none; }

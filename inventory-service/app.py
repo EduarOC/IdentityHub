@@ -486,7 +486,7 @@ def guardar_conector(tipo):
         try:
             secreto_cifrado = conectores.cifrar(secreto) if secreto else None
         except conectores.ErrorConector as exc:
-            app.logger.error("No se pudo cifrar el secreto del conector %s: %s", tipo, exc)
+            app.logger.exception("No se pudo cifrar el secreto de un conector")
             return jsonify({"error": str(exc)}), 503
 
         if not conector:
@@ -637,16 +637,10 @@ def _recuperar_sincronizaciones_interrumpidas():
         session.close()
 
 
-def aplicar_sincronizacion_entra(session, datos):
-    """Refleja en el inventario lo que hay en Entra ID. No borra nada: los accesos que ya no
-    existen allá se marcan como revocados y los usuarios que desaparecieron, como inactivos."""
-    ahora = datetime.now(timezone.utc)
-    resumen = {"usuarios": 0, "aplicativos": 0, "shadow_it": 0, "accesos_nuevos": 0, "accesos_revocados": 0}
-
-    # Usuarios ------------------------------------------------------------------
-    usuarios_por_externo = {}
-    vistos = set()
-    for u in datos["usuarios"]:
+def _sincronizar_usuarios(session, usuarios_entra):
+    """Crea o actualiza los usuarios. Devuelve {id en Entra: Usuario}."""
+    por_externo = {}
+    for u in usuarios_entra:
         if not u["correo"]:
             continue
         usuario = (session.query(Usuario).filter_by(origen="entra_id", id_externo=u["id"]).first()
@@ -659,31 +653,38 @@ def aplicar_sincronizacion_entra(session, datos):
         if usuario.estado != "offboarding":
             usuario.estado = "activo" if u["activo"] else "inactivo"
         session.flush()
-        usuarios_por_externo[u["id"]] = usuario
-        vistos.add(usuario.id)
-    for usuario in session.query(Usuario).filter_by(origen="entra_id").all():
-        if usuario.id not in vistos and usuario.estado == "activo":
-            usuario.estado = "inactivo"
-    resumen["usuarios"] = len(vistos)
+        por_externo[u["id"]] = usuario
 
-    # Aplicaciones empresariales (catálogo) ----------------------------------
-    aplicativos_por_externo = {}
-    for a in datos["aplicativos"]:
+    vistos = {usuario.id for usuario in por_externo.values()}
+    for usuario in session.query(Usuario).filter_by(origen="entra_id", estado="activo").all():
+        if usuario.id not in vistos:
+            usuario.estado = "inactivo"
+    return por_externo
+
+
+def _sincronizar_catalogo(session, aplicativos_entra):
+    """Aplicaciones empresariales del tenant. Devuelve {id del service principal: Aplicativo}."""
+    por_externo = {}
+    for a in aplicativos_entra:
         aplicativo = session.query(Aplicativo).filter_by(origen="entra_id", id_externo=a["id"]).first()
         if not aplicativo:
             aplicativo = Aplicativo(origen="entra_id", id_externo=a["id"], costo_licencia_mensual=0)
             session.add(aplicativo)
         aplicativo.nombre, aplicativo.tipo_soporte_sso = a["nombre"], a["sso"]
         session.flush()
-        aplicativos_por_externo[a["id"]] = aplicativo
-    resumen["aplicativos"] = len(aplicativos_por_externo)
+        por_externo[a["id"]] = aplicativo
+    return por_externo
 
-    # Shadow IT: una fila por aplicación con permisos OAuth, con la unión de los alcances ------
+
+def _sincronizar_shadow_it(session, concesiones):
+    """Una fila por aplicación con permisos OAuth, con la unión de los alcances concedidos.
+    Devuelve {id del service principal: Aplicativo}."""
     alcances = {}
-    for c in datos["concesiones"]:
+    for c in concesiones:
         alcances.setdefault(c["aplicativo_id"], {"nombre": c["nombre"], "alcances": set()})
         alcances[c["aplicativo_id"]]["alcances"].update(c["alcance"].split())
-    shadow_por_externo = {}
+
+    por_externo = {}
     for externo, info in alcances.items():
         aplicativo = (session.query(Aplicativo).filter_by(origen="oauth_discovery", id_externo=externo).first()
                       or session.query(Aplicativo).filter_by(origen="oauth_discovery", nombre=info["nombre"],
@@ -695,30 +696,45 @@ def aplicar_sincronizacion_entra(session, datos):
         aplicativo.nombre, aplicativo.id_externo, aplicativo.alcance_oauth = info["nombre"], externo, alcance
         aplicativo.puntaje_riesgo = calcular_puntaje_riesgo(alcance, aplicativo.fecha_ultimo_uso)
         session.flush()
-        shadow_por_externo[externo] = aplicativo
-    resumen["shadow_it"] = len(shadow_por_externo)
+        por_externo[externo] = aplicativo
+    return por_externo
 
-    # Accesos ----------------------------------------------------------------
-    deseados = set()
-    for a in datos["asignaciones"]:
-        if a["usuario_id"] in usuarios_por_externo and a["aplicativo_id"] in aplicativos_por_externo:
-            deseados.add((usuarios_por_externo[a["usuario_id"]].id, aplicativos_por_externo[a["aplicativo_id"]].id))
-    for c in datos["concesiones"]:
-        if c["usuario_id"] in usuarios_por_externo:
-            deseados.add((usuarios_por_externo[c["usuario_id"]].id, shadow_por_externo[c["aplicativo_id"]].id))
+
+def _sincronizar_accesos(session, datos, usuarios, catalogo, shadow):
+    """Deja vigentes exactamente los accesos que hay en Entra ID. Los que sobran se revocan con
+    fecha, nunca se borran. Devuelve (nuevos, revocados)."""
+    deseados = {
+        (usuarios[a["usuario_id"]].id, catalogo[a["aplicativo_id"]].id)
+        for a in datos["asignaciones"]
+        if a["usuario_id"] in usuarios and a["aplicativo_id"] in catalogo
+    } | {
+        (usuarios[c["usuario_id"]].id, shadow[c["aplicativo_id"]].id)
+        for c in datos["concesiones"]
+        if c["usuario_id"] in usuarios
+    }
 
     vigentes = {(a.usuario_id, a.aplicativo_id): a
                 for a in session.query(Acceso).filter_by(origen="entra_id", fecha_revocado=None).all()}
-    for clave, acceso in vigentes.items():
-        if clave not in deseados:
-            acceso.fecha_revocado = ahora
-            resumen["accesos_revocados"] += 1
-    for usuario_id, aplicativo_id in deseados - set(vigentes):
+    ahora = datetime.now(timezone.utc)
+    revocados = [acceso for clave, acceso in vigentes.items() if clave not in deseados]
+    for acceso in revocados:
+        acceso.fecha_revocado = ahora
+    nuevos = deseados - set(vigentes)
+    for usuario_id, aplicativo_id in nuevos:
         session.add(Acceso(usuario_id=usuario_id, aplicativo_id=aplicativo_id, origen="entra_id"))
-        resumen["accesos_nuevos"] += 1
+    return len(nuevos), len(revocados)
 
+
+def aplicar_sincronizacion_entra(session, datos):
+    """Refleja en el inventario lo que hay en Entra ID. No borra nada: los accesos que ya no
+    existen allá se marcan como revocados y los usuarios que desaparecieron, como inactivos."""
+    usuarios = _sincronizar_usuarios(session, datos["usuarios"])
+    catalogo = _sincronizar_catalogo(session, datos["aplicativos"])
+    shadow = _sincronizar_shadow_it(session, datos["concesiones"])
+    nuevos, revocados = _sincronizar_accesos(session, datos, usuarios, catalogo, shadow)
     session.commit()
-    return resumen
+    return {"usuarios": len(usuarios), "aplicativos": len(catalogo), "shadow_it": len(shadow),
+            "accesos_nuevos": nuevos, "accesos_revocados": revocados}
 
 
 # Columnas agregadas después de que la base de producción ya existía. create_all() crea tablas

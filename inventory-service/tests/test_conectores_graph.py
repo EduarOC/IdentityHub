@@ -112,7 +112,8 @@ def test_extraer_entra_arma_usuarios_aplicativos_asignaciones_y_concesiones():
     }
 
     def falso_get(url, params=None, timeout=None, headers=None):
-        assert timeout and headers["Authorization"] == "Bearer tok"
+        assert timeout
+        assert headers["Authorization"] == "Bearer tok"
         return _resp(respuestas[url.replace(mod.GRAPH, "")])
 
     with patch.object(mod.requests, "post", return_value=_resp({"access_token": "tok"})), \
