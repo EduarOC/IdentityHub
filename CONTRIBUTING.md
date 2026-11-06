@@ -1,134 +1,103 @@
-# Guía de Trabajo en GitHub — Equipo Restaurante QR
+# Cómo contribuir a IdentityHub
 
-Esta guía define cómo el equipo (David, Eduar, Jhoan) debe trabajar en este repositorio de
-aquí en adelante, para que exista trazabilidad individual real y evidencia verificable en
-cada corte, tal como lo exige el Plan de Calificación del proyecto de grado.
+Esta guía explica cómo se trabaja en el repositorio: configuración inicial, ramas, commits, Pull
+Requests y lo que se revisa antes de fusionar. IdentityHub maneja identidades y accesos de
+empresas, así que cada cambio pasa por pruebas, análisis de seguridad y un Pull Request.
 
-## 1. Configuración inicial (una sola vez, cada persona)
+## 1. Configuración inicial
 
-1. **Crear cuenta de GitHub** si no tienes una (con tu nombre real o uno identificable).
-2. **Pedir a Eduar (dueño del repo) que te agregue como colaborador**: Settings → Collaborators
-   → Add people → tu usuario de GitHub. Sin esto no podrás subir ramas propias.
-3. **Clonar el repositorio** en tu computador:
+1. Clona el repositorio:
    ```bash
-   git clone https://github.com/EduarOC/proyecto-de-grado.git
-   cd proyecto-de-grado
+   git clone https://github.com/EduarOC/IdentityHub.git
+   cd IdentityHub
    ```
-4. **Configurar tu identidad** (así los commits quedan a tu nombre, no genéricos):
+2. Configura tu identidad con un correo **vinculado a tu cuenta de GitHub**. Si no, los commits
+   aparecen como anónimos en GitHub y en SonarCloud:
    ```bash
-   git config user.name "Tu Nombre Completo"
-   git config user.email "tu-correo-asociado-a-github@ejemplo.com"
+   git config user.name "Tu Nombre"
+   git config user.email "el-correo-de-tu-cuenta-de-github@..."
    ```
-5. **Instalar dependencias y probar que corre:**
-   ```bash
-   pip install -r requirements.txt
-   python app.py
-   ```
+3. Levanta el entorno local y corre las pruebas: pasos en el `README.md` (secciones *Entorno
+   local* y *Pruebas*).
 
-## 2. El flujo de trabajo (GitHub Flow)
+Si no tienes acceso de escritura, trabaja desde un *fork* y abre el Pull Request desde ahí.
 
-Este repositorio sigue [GitHub Flow](https://docs.github.com/es/get-started/using-github/github-flow).
-Para **cada tarea** (una historia de usuario, un bug, una mejora):
+## 2. Flujo de trabajo (GitHub Flow)
 
-1. Actualizar tu copia local de `main`:
-   ```bash
-   git checkout main
-   git pull origin main
-   ```
-2. Crear una rama descriptiva (ver convención de nombres abajo):
-   ```bash
-   git checkout -b feature/nombre-corto-de-la-tarea
-   ```
-3. Trabajar y hacer **commits pequeños y frecuentes** (no un solo commit gigante al final).
-4. Subir la rama:
-   ```bash
-   git push -u origin feature/nombre-corto-de-la-tarea
-   ```
-5. Abrir un **Pull Request** en GitHub hacia `main` (plantilla en la sección 5).
-6. **Esperar revisión de al menos un compañero** antes de fusionar — no fusionar tu propio PR
-   sin que alguien más lo haya leído.
-7. Fusionar (Merge) solo después de la aprobación.
-8. Borrar la rama una vez fusionada (GitHub lo ofrece automáticamente).
+`main` está protegida: no admite cambios directos, *force push* ni borrado, y todo lo que llega
+a ella se despliega en Render. Para cada tarea:
 
-## 3. Convención de nombres de rama
+1. Actualiza tu copia de `main` y crea una rama:
+   ```bash
+   git checkout main && git pull origin main
+   git checkout -b feat/nombre-corto-de-la-tarea
+   ```
+2. Haz commits pequeños y descriptivos.
+3. Antes de subir, corre la verificación local (pruebas con cobertura, búsqueda de secretos y de
+   patrones peligrosos): `bash .claude/skills/verificar-antes-del-pr/scripts/verificar.sh`.
+4. Sube la rama y abre un **Pull Request** hacia `main` con la plantilla del repositorio.
+5. Se fusiona solo con **las pruebas y el Quality Gate de SonarCloud en verde**. GitHub lo exige.
+6. Borra la rama después de fusionar.
+
+## 3. Nombres de rama
 
 | Prefijo | Uso | Ejemplo |
 |---|---|---|
-| `feature/` | Funcionalidad nueva | `feature/panel-calificaciones` |
-| `fix/` | Corrección de un bug | `fix/carrito-cantidad-negativa` |
-| `docs/` | Documentación | `docs/guia-trabajo-github` |
-| `refactor/` | Reorganizar código sin cambiar comportamiento | `refactor/separar-rutas-api` |
+| `feat/` | Funcionalidad nueva | `feat/conector-google-workspace` |
+| `fix/` | Corrección de un error | `fix/proxy-static` |
+| `docs/` | Documentación | `docs/readme-producto` |
+| `test/` | Solo pruebas | `test/offboarding-keycloak` |
+| `chore/` | Mantenimiento, dependencias, despliegue | `chore/despliegue-propio-render` |
 
-## 4. Convención de mensajes de commit
+## 4. Mensajes de commit
 
 Formato: `tipo(alcance opcional): descripción corta en presente`, seguido de un cuerpo que
-explica **qué** cambia y **por qué** (no solo repetir el título).
+explica **qué** cambia y **por qué**.
 
-Tipos: `feat` (funcionalidad nueva), `fix` (corrección), `docs`, `refactor`, `test`, `chore`.
-
-**Ejemplos reales ya usados en este repositorio** (revísalos con `git log`):
+Tipos: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`.
 
 ```
-fix(seguridad): hashear contraseñas de staff con werkzeug.security
+fix(proxy): reenviar /static al aplicativo protegido
 
-Antes las contraseñas de admin/chef/mesero se guardaban y comparaban en texto
-plano en SQLite. Ahora se usan generate_password_hash / check_password_hash.
-
-Referencia: WSTG-ATHN-02, OWASP ASVS capítulo de Autenticación.
+Flask registra por defecto una ruta /static/<archivo> en el proxy, que
+respondía 404 a los estilos y al JavaScript del panel del inventario.
 ```
 
-Evitar mensajes genéricos como `"cambios"`, `"arreglos"`, `"update"` — no dicen nada útil
-para quien revise el historial después (incluido el jurado).
+Evita mensajes genéricos como «cambios» o «update».
 
-## 5. Plantilla de Pull Request
+## 5. Pull Requests
 
-Al abrir un PR, incluir en la descripción:
+La plantilla (`.github/PULL_REQUEST_TEMPLATE.md`) pide:
 
-- **Qué cambia** (1-2 frases).
-- **Por qué** (qué problema resuelve, o a qué historia de usuario / issue responde).
-- **Cómo se probó** (comandos ejecutados, casos verificados).
-- Si resuelve un Issue, escribir `Closes #N` para que se cierre automáticamente al fusionar.
+- **Qué cambia** y **por qué**.
+- **Cómo se probó**: comandos, casos verificados y lo que no se pudo probar.
+- **Referencia de seguridad**: si el cambio toca seguridad, el control de OWASP ASVS o WSTG
+  correspondiente.
+- Si resuelve un Issue, `Closes #N`.
 
-## 6. Revisión de código (Code Review) entre el equipo
+Un PR = un tema. Los PR que mezclan cambios no relacionados se dividen.
 
-- Antes de aprobar, leer el diff completo (pestaña "Files changed" del PR).
-- Preguntarse: ¿entiendo qué hace este cambio? ¿está probado? ¿rompe algo más?
-- Usar el botón **"Review changes"** en GitHub:
-  - **Comment**: dudas o sugerencias sin bloquear.
-  - **Approve**: listo para fusionar.
-  - **Request changes**: hay algo que corregir antes de fusionar.
-- Rotar quién revisa a quién — no debe ser siempre la misma persona aprobando todo.
+## 6. Reglas que no se negocian
 
-## 7. Vincular tareas con Issues
+- **Ningún secreto en el código ni en `render.yaml`:** van en variables de entorno
+  (`sync: false` o `generateValue`). Los secretos que se guardan en la base van cifrados.
+- **Toda ruta nueva de la API** pasa por la lista de control de la skill
+  `ruta-segura-inventario`: control de acceso, validación de entrada, errores sin detalles
+  internos y pruebas sin autorización.
+- **La auditoría no se borra:** `accesos`, `eventos_offboarding` y `eventos_conector` solo se
+  marcan (fechas, estados); nunca se eliminan filas.
+- **Los datos que vienen del tenant se pintan con `textContent`,** nunca como HTML.
+- **Cobertura mínima del 80 %** en el código nuevo (Quality Gate).
+- **El análisis automático de SonarCloud permanece apagado:** el análisis lo corre GitHub
+  Actions.
+- **Dependencias con versión exacta y hash** (`requirements.lock`), alineadas entre servicios
+  porque el CI las instala juntas.
 
-Los pendientes técnicos viven en [Issues de GitHub](https://github.com/EduarOC/proyecto-de-grado/issues),
-como complemento al tablero de ClickUp (ClickUp para gestión gerencial, Issues para lo técnico
-enlazado al código). Al crear un Issue nuevo, usar la plantilla correspondiente (aparecen al
-hacer clic en "New Issue"):
+## 7. Issues
 
-- **🐛 Reporte de Bug**: mismos campos de la plantilla oficial de la sección 12.3 de los
-  Lineamientos (Ambiente, Descripción, Severidad, Responsable, Evidencia, Estado).
-- **📋 Historia de Usuario**: mismos campos de la sección 12.2 (Como/Quiero/Para, Prioridad,
-  Criterios de aceptación, Evidencia).
+Los pendientes técnicos viven en
+[Issues de GitHub](https://github.com/EduarOC/IdentityHub/issues). Usa las plantillas
+(*Reporte de bug* o *Historia de usuario*) que aparecen al pulsar «New issue».
 
-Issues abiertos actuales para practicar este flujo:
-
-- #9 — Decisión sobre pasarela de pago real vs. simulada.
-- #10 — Evaluar migración de SQLite a PostgreSQL.
-- #11 — Trazabilidad individual (este mismo tema).
-
-## 8. Checklist antes de cada exposición de los martes / cada corte
-
-- [ ] ¿Hay commits de **esta semana** de los tres integrantes (no solo de uno)?
-- [ ] ¿Los Pull Requests abiertos tienen al menos una revisión?
-- [ ] ¿El README sigue reflejando cómo correr el proyecto hoy?
-- [ ] ¿Los Issues cerrados corresponden a trabajo realmente hecho?
-- [ ] ¿ClickUp tiene una tarjeta por cada Issue/PR relevante de la semana?
-
-## 9. Errores comunes a evitar
-
-- ❌ Trabajar directo en `main` sin crear una rama.
-- ❌ Mensajes de commit genéricos que no explican nada.
-- ❌ Que un solo integrante concentre todos los commits (mata la trazabilidad individual).
-- ❌ Pull Requests enormes que mezclan varias cosas no relacionadas — dificulta la revisión.
-- ❌ Fusionar sin que nadie más haya leído el cambio.
+Si encuentras una vulnerabilidad, **no abras un Issue público**: escribe directamente al
+mantenedor.

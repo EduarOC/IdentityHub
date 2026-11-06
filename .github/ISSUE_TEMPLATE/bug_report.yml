@@ -1,5 +1,5 @@
 name: "🐛 Reporte de Bug"
-description: Reportar un defecto en DEV o UAT, con los mismos campos de la plantilla oficial del proyecto (sección 12.3 de los Lineamientos).
+description: Reportar un defecto en local, UAT o producción, con ambiente, severidad y evidencia.
 title: "[BUG] "
 labels: ["bug"]
 body:
