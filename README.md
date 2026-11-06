@@ -49,10 +49,11 @@ industria) y aporta valor real en tres capas:
 | Keycloak (IdP, OIDC) con realm auto-importado | Funciona en local |
 | Auth Reverse Proxy para aplicativos legacy | Funciona en local |
 | Servicio de inventario + panel de administración | Funciona en local |
-| Offboarding con registro de auditoría | Funciona (solo en la base de IdentityHub) |
-| Revocación en Keycloak y cierre de sesión en el proxy | **Pendiente** (RF-08, RF-09) |
-| Conector de Shadow IT para Entra ID | Probado con datos simulados; falta el tenant real (Semana 15) |
-| Despliegue en Render | Inventario y base definidos en `render.yaml`; el resto, pendiente |
+| Offboarding con registro de auditoría | Funciona |
+| Deshabilitar la cuenta en Keycloak y cerrar sus sesiones al retirar (RF-08) | Funciona con el conector de Keycloak conectado |
+| Invalidar la sesión ya abierta en el auth-proxy (RF-09) | **Pendiente** |
+| Conector de Microsoft Entra ID (usuarios, aplicaciones, accesos y Shadow IT) | Funciona desde el panel; probado con Graph simulado |
+| Despliegue en Render | Completo en `render.yaml` (ver `docs/DESPLIEGUE_RENDER.md`) |
 
 ## Calidad
 

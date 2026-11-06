@@ -13,6 +13,7 @@ import base64
 import hashlib
 import os
 import re
+from urllib.parse import quote
 
 import requests
 from cryptography.fernet import Fernet, InvalidToken
@@ -200,3 +201,94 @@ def extraer_entra(tenant_id, client_id, client_secret):
         "asignaciones": _leer_asignaciones(token, empresariales),
         "concesiones": _leer_concesiones(token, nombres),
     }
+
+
+# --------------------------------------------------------------------------- Keycloak
+# La dirección de Keycloak sale del entorno (KEYCLOAK_URL) y no del formulario: así nadie
+# puede usar el conector para que el inventario haga peticiones a otro servidor (SSRF).
+PATRON_REALM = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+PATRON_CLIENTE_KEYCLOAK = re.compile(r"^[A-Za-z0-9._:-]{1,255}$")
+SIN_PERMISOS_KEYCLOAK = ("La cuenta de servicio no tiene permisos: asígnale los roles view-users y "
+                         "manage-users del cliente realm-management.")
+
+
+def url_keycloak():
+    url = os.environ.get("KEYCLOAK_URL", "").rstrip("/")
+    if not url:
+        raise ErrorConector("El servidor no tiene configurada la dirección de Keycloak (KEYCLOAK_URL).")
+    return url
+
+
+def validar_credenciales_keycloak(realm, client_id, client_secret, secreto_obligatorio):
+    if not isinstance(realm, str) or not PATRON_REALM.match(realm):
+        return "El realm solo puede tener letras, números, puntos, guiones y guiones bajos."
+    if not isinstance(client_id, str) or not PATRON_CLIENTE_KEYCLOAK.match(client_id):
+        return "El Client ID no es válido."
+    if client_secret is not None and (not isinstance(client_secret, str) or len(client_secret) > 512):
+        return "El secreto del cliente no es válido."
+    if secreto_obligatorio and not client_secret:
+        return "Falta el secreto del cliente."
+    return None
+
+
+def _token_keycloak(realm, client_id, client_secret):
+    try:
+        resp = requests.post(
+            f"{url_keycloak()}/realms/{quote(realm, safe='')}/protocol/openid-connect/token",
+            data={"client_id": client_id, "client_secret": client_secret, "grant_type": "client_credentials"},
+            timeout=TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise ErrorConector("No se pudo contactar a Keycloak. Si está dormido (Render gratuito), "
+                            "espera un minuto y vuelve a intentarlo.") from exc
+    if resp.status_code == 404:
+        raise ErrorConector(f"El realm «{realm}» no existe en Keycloak.")
+    if resp.status_code in (400, 401):
+        raise ErrorConector("Keycloak rechazó las credenciales: revisa el Client ID, el secreto y que el "
+                            "cliente tenga activadas la autenticación y las cuentas de servicio.")
+    if not resp.ok:
+        raise ErrorConector(f"Keycloak respondió con un error ({resp.status_code}) al pedir el token.")
+    return resp.json()["access_token"]
+
+
+def _admin_keycloak(metodo, token, realm, ruta, **kwargs):
+    url = f"{url_keycloak()}/admin/realms/{quote(realm, safe='')}{ruta}"
+    try:
+        resp = requests.request(metodo, url, timeout=TIMEOUT,
+                                headers={"Authorization": f"Bearer {token}"}, **kwargs)
+    except requests.RequestException as exc:
+        raise ErrorConector("Se perdió la conexión con Keycloak.") from exc
+    if resp.status_code == 403:
+        raise ErrorConector(SIN_PERMISOS_KEYCLOAK)
+    if not resp.ok:
+        raise ErrorConector(f"Keycloak respondió con un error ({resp.status_code}).")
+    return resp
+
+
+def probar_keycloak(realm, client_id, client_secret):
+    """Comprueba credenciales y permisos leyendo un usuario. Devuelve el nombre del realm."""
+    token = _token_keycloak(realm, client_id, client_secret)
+    _admin_keycloak("GET", token, realm, "/users", params={"max": "1", "briefRepresentation": "true"})
+    return realm
+
+
+def deshabilitar_en_keycloak(realm, client_id, client_secret, correo):
+    """
+    Deshabilita la cuenta del usuario en Keycloak y cierra todas sus sesiones (RF-08).
+    Busca por correo exacto y, si no aparece, por nombre de usuario igual al correo.
+    Devuelve "deshabilitado" o "no_encontrado".
+    """
+    token = _token_keycloak(realm, client_id, client_secret)
+    cuentas = []
+    for campo in ("email", "username"):
+        cuentas = _admin_keycloak("GET", token, realm, "/users",
+                                  params={campo: correo, "exact": "true"}).json()
+        if cuentas:
+            break
+    if not cuentas:
+        return "no_encontrado"
+    for cuenta in cuentas:
+        ruta = f"/users/{quote(cuenta['id'], safe='')}"
+        _admin_keycloak("PUT", token, realm, ruta, json={"enabled": False})
+        _admin_keycloak("POST", token, realm, f"{ruta}/logout")
+    return "deshabilitado"

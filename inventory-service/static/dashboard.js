@@ -33,7 +33,8 @@ function mostrarToast(mensaje, tipo = "ok") {
     toast.dataset.tipo = tipo;
     toast.classList.add("show");
     clearTimeout(temporizadorToast);
-    temporizadorToast = setTimeout(() => toast.classList.remove("show"), 4200);
+    // Los mensajes largos (p. ej. el resultado en Keycloak) se dejan más tiempo en pantalla.
+    temporizadorToast = setTimeout(() => toast.classList.remove("show"), Math.max(4200, mensaje.length * 70));
 }
 
 function claseRiesgo(puntaje) {
@@ -144,7 +145,9 @@ async function ejecutarOffboarding(usuarioId, nombre, boton) {
         });
         if (!data.success) throw new Error(data.error || "respuesta sin éxito");
         const lista = data.aplicativos_revocados.length > 0 ? data.aplicativos_revocados.join(", ") : "ningún acceso activo";
-        mostrarToast(`Offboarding de ${nombre} completado. Revocado: ${lista}`);
+        const sso = data.sso || {};
+        mostrarToast(`Offboarding de ${nombre}: revocado ${lista}. ${sso.mensaje || ""}`,
+                     sso.resultado === "error" ? "error" : "ok");
         await cargarUsuarios();
         await refrescarDetalle(usuarioId);
     } catch (error) {
@@ -367,7 +370,11 @@ function boton(texto, clase, accion, etiqueta) {
 
 function detallesConector(c) {
     const detalles = [];
-    if (c.nombre_tenant) detalles.push(el("p", { clase: "conector-meta", texto: `Tenant: ${c.nombre_tenant}` }));
+    if (c.nombre_tenant) {
+        const etiqueta = c.tipo === "keycloak" ? "Realm" : "Tenant";
+        detalles.push(el("p", { clase: "conector-meta", texto: `${etiqueta}: ${c.nombre_tenant}` }));
+    }
+    if (c.servidor && c.estado !== "desconectado") detalles.push(el("p", { clase: "conector-meta", texto: `Servidor: ${c.servidor}` }));
     if (c.ultima_sincronizacion) {
         detalles.push(el("p", { clase: "conector-meta", texto: `Última sincronización: ${fechaHora(c.ultima_sincronizacion)}` }));
     }
@@ -383,8 +390,8 @@ function accionesConector(c) {
     }
     const sincronizando = c.estado === "sincronizando";
     let principal;
-    if (c.estado === "pendiente") {
-        principal = boton("Probar conexión", "btn-primario", b => probarYSincronizar(c, b));
+    if (c.estado === "pendiente" || !c.sincroniza) {
+        principal = boton("Probar conexión", c.estado === "pendiente" ? "btn-primario" : "btn-secundario", b => probarYSincronizar(c, b));
     } else {
         principal = boton(sincronizando ? "Sincronizando…" : "Sincronizar ahora", "btn-primario", b => sincronizarConector(c, b));
         principal.disabled = sincronizando;
@@ -454,16 +461,41 @@ function vigilarSincronizacion() {
 
 let conectorEnEdicion = null;
 
+// Textos del formulario según el conector.
+const FORMULARIO = {
+    entra_id: {
+        subtitulo: "Lectura de usuarios, aplicaciones empresariales y permisos OAuth",
+        tenant: ["Directory (tenant) ID", "00000000-0000-0000-0000-000000000000"],
+        cliente: ["Application (client) ID", "00000000-0000-0000-0000-000000000000"],
+        secreto: "Client secret (Value)",
+    },
+    keycloak: {
+        subtitulo: "Deshabilita la cuenta y cierra sus sesiones al ejecutar un offboarding",
+        tenant: ["Realm", "identityhub"],
+        cliente: ["Client ID", "identityhub-inventario"],
+        secreto: "Client secret",
+    },
+};
+
 function abrirConfiguracion(c) {
     conectorEnEdicion = c;
+    const textos = FORMULARIO[c.tipo];
     document.getElementById("config-titulo").textContent = `${c.estado === "desconectado" ? "Conectar" : "Configurar"} ${c.nombre}`;
-    document.getElementById("config-tenant").value = c.tenant_id || "";
+    document.getElementById("config-subtitulo").textContent = textos.subtitulo;
+    document.getElementById("config-tenant-etiqueta").textContent = textos.tenant[0];
+    document.getElementById("config-tenant").placeholder = textos.tenant[1];
+    document.getElementById("config-cliente-etiqueta").textContent = textos.cliente[0];
+    document.getElementById("config-cliente").placeholder = textos.cliente[1];
+    document.getElementById("config-secreto-etiqueta").textContent = textos.secreto;
+    document.querySelectorAll("[data-ayuda]").forEach(d => { d.hidden = d.dataset.ayuda !== c.tipo; });
+    document.getElementById("config-servidor-kc").textContent = c.servidor || "tu servidor de Keycloak";
+    document.getElementById("config-tenant").value = c.tenant_id || (c.tipo === "keycloak" ? "identityhub" : "");
     document.getElementById("config-cliente").value = c.client_id || "";
     const secreto = document.getElementById("config-secreto");
     secreto.value = "";
     secreto.placeholder = c.tiene_secreto ? "Guardado · déjalo vacío para conservarlo" : "";
     document.getElementById("config-secreto-ayuda").textContent = c.tiene_secreto
-        ? "Hay un secreto guardado. Escribe uno nuevo solo si lo rotaste en Entra ID."
+        ? "Hay un secreto guardado. Escribe uno nuevo solo si lo rotaste."
         : "Se guarda cifrado y nunca se vuelve a mostrar.";
     document.getElementById("config-error").textContent = "";
     document.getElementById("config-conector").showModal();
@@ -487,8 +519,12 @@ async function guardarConfiguracion(evento) {
         guardar.textContent = "Probando conexión…";
         const prueba = await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}/probar`, "POST");
         document.getElementById("config-conector").close();
-        mostrarToast(`Conectado a ${prueba.nombre_tenant} · iniciando la primera sincronización…`);
-        await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}/sincronizar`, "POST");
+        if (c.sincroniza) {
+            mostrarToast(`Conectado a ${prueba.nombre_tenant} · iniciando la primera sincronización…`);
+            await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}/sincronizar`, "POST");
+        } else {
+            mostrarToast(`${c.nombre} conectado (${prueba.nombre_tenant}). Los offboarding deshabilitarán la cuenta en el SSO.`);
+        }
     } catch (error_) {
         console.error("No se pudo conectar:", error_);
         if (document.getElementById("config-conector").open) {

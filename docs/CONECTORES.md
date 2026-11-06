@@ -8,7 +8,7 @@ usuarios con el rol `admin-ti`.
 |---|---|---|
 | Microsoft Entra ID | Disponible | Usuarios, aplicaciones empresariales, asignaciones y permisos OAuth (Shadow IT) |
 | Google Workspace | Próximamente | — |
-| Keycloak | Próximamente | Deshabilitar la cuenta en el SSO al ejecutar un offboarding (RF-08) |
+| Keycloak | Disponible | Al ejecutar un offboarding, deshabilita la cuenta en el SSO y cierra sus sesiones (RF-08) |
 
 ## Microsoft Entra ID
 
@@ -83,6 +83,52 @@ Después, usa **Sincronizar ahora** cada vez que quieras actualizar el inventari
 | *Faltan permisos: … Directory.Read.All* | Falta el permiso o el **Grant admin consent** (paso 2 del registro). |
 | *La sincronización se interrumpió por un reinicio del servidor* | Render reinició el servicio a mitad de la sincronización. Pulsa **Sincronizar ahora**. |
 | *No se pudo leer el secreto guardado* | Cambió `CONECTORES_CLAVE`. Vuelve a ingresar el secreto en **Configurar**. |
+
+## Keycloak
+
+Con este conector, el offboarding ya no se queda en el inventario: deshabilita la cuenta del
+usuario en Keycloak y cierra todas sus sesiones abiertas (RF-08).
+
+### 1. Crear el cliente en Keycloak
+
+En la consola de administración (`KEYCLOAK_URL/admin`), dentro del realm de tus usuarios:
+
+1. **Clients → Create client**, con Client ID `identityhub-inventario`. En el siguiente paso
+   activa **Client authentication** y **Service accounts roles**, y desactiva **Standard flow**.
+2. En la pestaña **Service accounts roles**, ve a **Assign role → Filter by clients** y asigna
+   **`view-users`** y **`manage-users`** de `realm-management`. No le des más roles: son los
+   mínimos para buscar y deshabilitar usuarios.
+3. En la pestaña **Credentials**, copia el **Client secret**.
+
+### 2. Conectar desde el panel
+
+**Integraciones → Keycloak → Conectar**. Escribe el realm (por defecto `identityhub`), el
+Client ID y el secreto, y pulsa **Guardar y conectar**. El panel comprueba que puede leer
+usuarios.
+
+La dirección del servidor no se escribe en el formulario: sale de la variable `KEYCLOAK_URL`
+del inventario. Así nadie puede usar el conector para que el inventario haga peticiones a otro
+servidor.
+
+### Qué pasa en un offboarding
+
+1. Se revocan los accesos en el inventario, como siempre.
+2. Si Keycloak está **conectado**, se busca la cuenta por correo exacto (y, si no aparece, por
+   nombre de usuario igual al correo). Se deshabilita y se cierran sus sesiones.
+3. El resultado queda en `eventos_offboarding.resultado_sso` y se muestra en el panel:
+
+| Resultado | Significado |
+|---|---|
+| `deshabilitado` | Cuenta deshabilitada y sesiones cerradas. |
+| `no_encontrado` | El usuario no tiene cuenta en Keycloak. |
+| `error` | Keycloak no respondió o faltan permisos. El retiro en el inventario se registró igual. Repite el offboarding para reintentar, o deshabilita la cuenta a mano. |
+| `sin_conector` | El conector no está conectado: la cuenta en el SSO sigue activa. |
+
+El panel no deja que un administrador ejecute su propio offboarding, para que no se quede sin
+acceso.
+
+**Pendiente (RF-09):** las sesiones ya abiertas en el auth-proxy duran hasta que vence su cookie.
+Keycloak ya no renueva el acceso, pero el proxy todavía no consulta a Keycloak en cada petición.
 
 ## Script de línea de comandos
 

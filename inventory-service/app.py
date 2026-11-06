@@ -126,6 +126,8 @@ class EventoOffboarding(Base):
     fecha = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     aplicativos_revocados = Column(String)  # lista separada por comas, para el MVP
     responsable = Column(String, nullable=False)
+    # Resultado en el SSO (RF-08): 'deshabilitado', 'no_encontrado', 'error' o 'sin_conector'.
+    resultado_sso = Column(String, nullable=True)
 
 
 class Conector(Base):
@@ -355,12 +357,33 @@ def accesos_de_usuario(usuario_id):
         session.close()
 
 
+MENSAJES_SSO = {
+    "deshabilitado": "Cuenta deshabilitada en Keycloak y sesiones cerradas.",
+    "no_encontrado": "El usuario no tiene cuenta en Keycloak: no había nada que deshabilitar.",
+    "sin_conector": "Keycloak no está conectado: la cuenta en el SSO sigue activa.",
+}
+
+
+def _deshabilitar_en_sso(session, correo):
+    """Deshabilita la cuenta en Keycloak si el conector está conectado. Nunca lanza: el retiro en
+    el inventario se registra igual y el resultado queda en el evento para hacer seguimiento."""
+    conector = session.query(Conector).filter_by(tipo="keycloak").first()
+    if not conector or conector.estado != "conectado":
+        return "sin_conector", MENSAJES_SSO["sin_conector"]
+    try:
+        resultado = conectores.deshabilitar_en_keycloak(*_credenciales(conector), correo)
+    except conectores.ErrorConector as exc:
+        app.logger.warning("No se pudo deshabilitar una cuenta en Keycloak durante un offboarding")
+        return "error", f"No se pudo deshabilitar la cuenta en Keycloak: {exc} Hazlo a mano o vuelve a intentarlo."
+    return resultado, MENSAJES_SSO[resultado]
+
+
 @app.route("/api/usuarios/<int:usuario_id>/offboarding", methods=["POST"])
 def iniciar_offboarding(usuario_id):
     """
-    Punto de entrada del flujo crítico del proyecto (ver docs/ARQUITECTURA.md).
-    TODO técnico pendiente: reemplazar la simulación de abajo por la llamada real a la API
-    de administración de Keycloak (deshabilitar el usuario) y al auth proxy (invalidar sesión).
+    Flujo crítico del proyecto (ver docs/ARQUITECTURA.md): revoca los accesos en el inventario y,
+    con el conector de Keycloak conectado, deshabilita la cuenta en el SSO y cierra sus sesiones
+    (RF-08). Repetirlo sobre un usuario ya retirado reintenta el paso del SSO.
     """
     data = request.get_json(silent=True) or {}
     # Detrás del proxy, el responsable es quien inició sesión, no lo que diga el cuerpo.
@@ -371,6 +394,9 @@ def iniciar_offboarding(usuario_id):
         usuario = session.query(Usuario).filter_by(id=usuario_id).first()
         if not usuario:
             return jsonify({"success": False, "error": "Usuario no encontrado"}), 404
+        if usuario_conectado() and usuario.correo.lower() == usuario_conectado().lower():
+            return jsonify({"success": False,
+                            "error": "No puedes ejecutar tu propio offboarding: te quedarías sin acceso."}), 400
 
         accesos_activos = session.query(Acceso).filter_by(usuario_id=usuario_id, fecha_revocado=None).all()
         nombres_apps = []
@@ -379,11 +405,13 @@ def iniciar_offboarding(usuario_id):
             nombres_apps.append(acceso.aplicativo.nombre)
 
         usuario.estado = "offboarding"
+        resultado_sso, mensaje_sso = _deshabilitar_en_sso(session, usuario.correo)
 
         evento = EventoOffboarding(
             usuario_id=usuario_id,
             aplicativos_revocados=", ".join(nombres_apps),
             responsable=responsable,
+            resultado_sso=resultado_sso,
         )
         session.add(evento)
         session.commit()
@@ -391,7 +419,7 @@ def iniciar_offboarding(usuario_id):
         return jsonify({
             "success": True,
             "aplicativos_revocados": nombres_apps,
-            "nota": "Simulado a nivel de base de datos. Falta integrar la revocación real en Keycloak.",
+            "sso": {"resultado": resultado_sso, "mensaje": mensaje_sso},
         })
     finally:
         session.close()
@@ -405,10 +433,16 @@ CATALOGO_CONECTORES = [
                     "de tu tenant de Microsoft 365."},
     {"tipo": "google_workspace", "nombre": "Google Workspace", "disponible": False,
      "descripcion": "Usuarios y aplicaciones con acceso OAuth a cuentas de Google."},
-    {"tipo": "keycloak", "nombre": "Keycloak", "disponible": False,
-     "descripcion": "Deshabilitar la cuenta en el SSO al ejecutar un offboarding (RF-08)."},
+    {"tipo": "keycloak", "nombre": "Keycloak", "disponible": True,
+     "descripcion": "Al ejecutar un offboarding, deshabilita la cuenta del usuario en el SSO y cierra "
+                    "todas sus sesiones (RF-08)."},
 ]
 TIPOS_DISPONIBLES = {c["tipo"] for c in CATALOGO_CONECTORES if c["disponible"]}
+VALIDAR_CREDENCIALES = {"entra_id": conectores.validar_credenciales_entra,
+                        "keycloak": conectores.validar_credenciales_keycloak}
+PROBAR_CONEXION = {"entra_id": lambda *c: conectores.probar_entra(*c),
+                   "keycloak": lambda *c: conectores.probar_keycloak(*c)}
+CONECTORES_QUE_SINCRONIZAN = {"entra_id"}
 _bloqueo_sincronizacion = threading.Lock()
 
 
@@ -428,6 +462,9 @@ def _registrar_evento(session, tipo, accion, detalle=None):
 
 def _conector_a_json(definicion, conector):
     datos = dict(definicion)
+    datos["sincroniza"] = definicion["tipo"] in CONECTORES_QUE_SINCRONIZAN
+    if definicion["tipo"] == "keycloak":
+        datos["servidor"] = os.environ.get("KEYCLOAK_URL") or None
     datos.update({"estado": "desconectado", "tenant_id": None, "client_id": None, "tiene_secreto": False,
                   "nombre_tenant": None, "ultimo_error": None, "ultima_sincronizacion": None, "resumen": None})
     if conector:
@@ -476,7 +513,7 @@ def guardar_conector(tipo):
         conector, error = _conector_disponible(session, tipo)
         if error:
             return error
-        mensaje = conectores.validar_credenciales_entra(
+        mensaje = VALIDAR_CREDENCIALES[tipo](
             tenant_id, client_id, secreto,
             secreto_obligatorio=not (conector and conector.secreto_cifrado))
         if mensaje:
@@ -525,7 +562,7 @@ def probar_conector(tipo):
         if not conector or not conector.secreto_cifrado:
             return jsonify({"error": "Primero guarda las credenciales del conector."}), 400
         try:
-            nombre = conectores.probar_entra(*_credenciales(conector))
+            nombre = PROBAR_CONEXION[tipo](*_credenciales(conector))
         except conectores.ErrorConector as exc:
             conector.estado, conector.ultimo_error = "error", str(exc)
             _registrar_evento(session, tipo, "probar", "fallida")
@@ -546,6 +583,8 @@ def sincronizar_conector(tipo):
         conector, error = _conector_disponible(session, tipo)
         if error:
             return error
+        if tipo not in CONECTORES_QUE_SINCRONIZAN:
+            return jsonify({"error": "Este conector no sincroniza datos: actúa durante el offboarding."}), 400
         if not conector or conector.estado not in ("conectado", "error") or not conector.secreto_cifrado:
             return jsonify({"error": "Prueba la conexión antes de sincronizar."}), 400
         if not _bloqueo_sincronizacion.acquire(blocking=False):
@@ -744,6 +783,7 @@ COLUMNAS_NUEVAS = {
     "aplicativos": {"id_externo": "VARCHAR"},
     "usuarios": {"origen": "VARCHAR NOT NULL DEFAULT 'manual'", "id_externo": "VARCHAR"},
     "accesos": {"origen": "VARCHAR NOT NULL DEFAULT 'manual'"},
+    "eventos_offboarding": {"resultado_sso": "VARCHAR"},
 }
 
 
