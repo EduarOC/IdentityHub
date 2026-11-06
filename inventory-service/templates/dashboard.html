@@ -13,7 +13,7 @@
             <span class="brand-mark">●</span>
             <span class="brand-name">Identity<strong>Hub</strong></span>
         </div>
-        <div class="topbar-sub">Panel de administración · Gestión de Identidades y Shadow IT</div>
+        <div class="topbar-sub">Panel de administración · datos de ejemplo</div>
     </header>
 
     <main class="wrap">
@@ -42,135 +42,41 @@
                     <h2>Usuarios</h2>
                     <span class="panel-hint">Offboarding revoca todos los accesos activos, incluido Shadow IT</span>
                 </div>
-                <div class="table-wrap">
-                    <table class="data-table" id="tabla-usuarios">
-                        <thead>
-                            <tr><th>Nombre</th><th>Correo</th><th>Estado</th><th>Accesos activos</th><th></th></tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
+                <table class="data-table" id="tabla-usuarios">
+                    <thead>
+                        <tr><th>Nombre</th><th>Correo</th><th>Estado</th><th>Accesos activos</th><th></th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
 
             <div class="panel">
                 <div class="panel-head">
                     <h2>Catálogo de aplicativos</h2>
-                    <span class="panel-hint">Registrados en Microsoft Entra ID / TI</span>
+                    <span class="panel-hint">Registrados manualmente por TI</span>
                 </div>
-                <div class="table-wrap">
-                    <table class="data-table" id="tabla-aplicativos">
-                        <thead>
-                            <tr><th>Aplicativo</th><th>Soporte SSO</th><th>Costo/mes</th></tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                </div>
+                <table class="data-table" id="tabla-aplicativos">
+                    <thead>
+                        <tr><th>Aplicativo</th><th>Soporte SSO</th><th>Costo/mes</th></tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
         </section>
 
         <section class="panel panel-shadow">
             <div class="panel-head">
-                <div class="panel-title-group">
-                    <h2>Shadow IT descubierto <span class="diff-tag">diferencial del proyecto</span></h2>
-                    <span class="panel-hint">Aplicativos conectados por OAuth sin aprobación previa de TI, ordenados por nivel de riesgo</span>
-                </div>
-                <div class="panel-actions">
-                    <button class="btn-action btn-secondary" id="btn-abrir-modal-tenant">
-                        <span>⚙️</span> Configurar Tenant Microsoft
-                    </button>
-                    <button class="btn-action btn-primary" id="btn-sincronizar-entra">
-                        <span id="sync-spinner">🔄</span> Sincronizar desde Entra ID
-                    </button>
-                    <button class="btn-action btn-danger" id="btn-desconectar-tenant" title="Desconectar tenant y vaciar datos del inventario">
-                        <span>🔌</span> Desconectar Tenant
-                    </button>
-                </div>
+                <h2>Shadow IT descubierto <span class="diff-tag">diferencial del proyecto</span></h2>
+                <span class="panel-hint">Aplicativos conectados por OAuth sin aprobación de TI, ordenados por riesgo</span>
             </div>
             <div class="shadow-grid" id="shadow-grid"></div>
         </section>
 
         <footer class="foot-note">
-            IdentityHub — Proyecto de Grado FESNA 2026 · Conector Microsoft Entra ID (Graph API) activo.
+            Datos de ejemplo ilustrativos — no corresponden a ninguna empresa real. Ver
+            <code>docs/INVESTIGACION_PENDIENTE.md</code> para reemplazarlos por el catálogo real.
         </footer>
     </main>
-
-    <!-- Modal de Configuración de Microsoft Entra ID -->
-    <div class="modal-backdrop" id="modal-tenant" style="display: none;">
-        <div class="modal-card">
-            <div class="modal-header">
-                <div class="modal-title-wrap">
-                    <span class="ms-logo">⊞</span>
-                    <h3>Configurar Tenant Microsoft Entra ID</h3>
-                </div>
-                <button class="modal-close" id="btn-cerrar-modal" title="Cerrar">&times;</button>
-            </div>
-            <div class="modal-body">
-                <p class="modal-desc">
-                    Ingresa las credenciales de la app en <strong>Microsoft Entra ID</strong>. Soporta autenticación con Certificado (empresas con políticas estrictas) o Secreto de cliente.
-                </p>
-
-                <div class="form-group">
-                    <label>Método de Autenticación del Tenant</label>
-                    <div class="auth-toggle">
-                        <label class="auth-tab">
-                            <input type="radio" name="auth_mode" value="certificate" id="mode-cert" checked>
-                            <span>📜 Certificado / Llave Privada (Activos y Finanzas)</span>
-                        </label>
-                        <label class="auth-tab">
-                            <input type="radio" name="auth_mode" value="secret" id="mode-secret">
-                            <span>🔑 Secreto de Cliente</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label for="cfg-tenant-id">Directory (Tenant) ID</label>
-                    <input type="text" id="cfg-tenant-id" placeholder="Ej. 8f6b1234-abcd-5678-9012-3456789abcde" class="form-input" spellcheck="false">
-                    <small class="form-help">Id. del directorio de la organización (pestaña Overview en Entra ID).</small>
-                </div>
-
-                <div class="form-group">
-                    <label for="cfg-client-id">Application (Client) ID</label>
-                    <input type="text" id="cfg-client-id" placeholder="Ej. 3d2a9876-ef01-2345-6789-abcdef012345" class="form-input" spellcheck="false">
-                    <small class="form-help">Id. único de la aplicación registrada.</small>
-                </div>
-
-                <!-- Campo para Certificado / Llave PEM -->
-                <div class="form-group" id="field-group-cert">
-                    <div class="field-label-row">
-                        <label for="cfg-client-cert">Llave Privada y Certificado (.pem)</label>
-                        <label class="btn-upload-file">
-                            📁 Cargar archivo .pem
-                            <input type="file" id="input-pem-file" accept=".pem,.key,.cer" style="display: none;">
-                        </label>
-                    </div>
-                    <textarea id="cfg-client-cert" rows="5" placeholder="Pega el contenido del archivo IdentityHub_Completo.pem o cárgalo con el botón de arriba" class="form-input form-textarea" spellcheck="false"></textarea>
-                    <small class="form-help" id="hint-cert">Usa el archivo <code>IdentityHub_Completo.pem</code> generado en tu carpeta Descargas.</small>
-                </div>
-
-                <!-- Campo para Secreto de Cliente -->
-                <div class="form-group" id="field-group-secret" style="display: none;">
-                    <label for="cfg-client-secret">Client Secret (Valor del secreto)</label>
-                    <input type="password" id="cfg-client-secret" placeholder="Ingresa el secreto generado" class="form-input" spellcheck="false">
-                    <small class="form-help" id="hint-secret">Para organizaciones donde los secretos no están bloqueados por directiva.</small>
-                </div>
-
-                <div class="status-box" id="status-box" style="display: none;"></div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-action btn-danger" id="btn-modal-desconectar" title="Desconectar tenant y vaciar datos">
-                    <span>🔌</span> Desconectar Tenant
-                </button>
-                <div style="flex: 1;"></div>
-                <button class="btn-action btn-secondary" id="btn-probar-conexion">
-                    <span id="test-spinner">🔍</span> Probar Conexión
-                </button>
-                <button class="btn-action btn-primary" id="btn-guardar-tenant">
-                    💾 Guardar Configuración
-                </button>
-            </div>
-        </div>
-    </div>
 
     <div class="toast" id="toast"></div>
 
