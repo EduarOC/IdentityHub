@@ -207,3 +207,17 @@ def test_logout_sin_keycloak_disponible_vuelve_al_login(proxy, client, monkeypat
     with patch.object(proxy.oauth.keycloak, "load_server_metadata", side_effect=OSError("caído")):
         r = client.get("/logout")
     assert r.headers["Location"].endswith("/login")
+
+
+def test_los_archivos_estaticos_se_piden_al_backend(proxy, sesion_iniciada):
+    # El proxy no tiene /static propio: los estilos y scripts del aplicativo deben reenviarse.
+    with patch.object(proxy.requests, "request", return_value=_respuesta_backend()) as m:
+        r = sesion_iniciada.get("/static/style.css")
+    assert r.status_code == 200
+    assert m.call_args.kwargs["url"].endswith("/static/style.css")
+
+
+def test_archivos_estaticos_sin_sesion_piden_login(client):
+    r = client.get("/static/dashboard.js")
+    assert r.status_code == 302
+    assert r.headers["Location"].endswith("/login")

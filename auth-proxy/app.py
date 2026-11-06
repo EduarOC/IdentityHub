@@ -26,7 +26,9 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # validar tokens CSRF intermediados. Por eso la defensa vive aquí, sin tokens: la cookie de
 # sesión es SameSite=Lax y las peticiones que cambian datos (POST, PUT, PATCH, DELETE) se
 # rechazan si Origin o Referer indican otro sitio (ver _mismo_origen).
-app = Flask(__name__)
+# Sin carpeta estática propia: Flask atiende /static/... por defecto y así interceptaba los
+# estilos y el JavaScript del aplicativo protegido (el panel del inventario quedaba sin ellos).
+app = Flask(__name__, static_folder=None)
 app.secret_key = os.environ.get("PROXY_SECRET_KEY") or os.urandom(24).hex()
 # En Render, HTTPS termina en el balanceador y llega HTTP al contenedor. ProxyFix hace que
 # Flask respete X-Forwarded-Proto/Host, para que la URL de retorno a Keycloak sea https://.
