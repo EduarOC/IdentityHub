@@ -68,7 +68,10 @@ responsable el correo de quien inició sesión.
 Para dar acceso a otra persona: consola de Keycloak → realm `identityhub` → **Users** →
 crear o elegir el usuario → **Role mapping → Assign role** → `admin-ti`.
 
-**Conector de Entra ID:** para importar al inventario desplegado, definir
+**Conectar el tenant:** desde el panel, en **Integraciones** (ver `docs/CONECTORES.md`). El
+secreto se guarda cifrado con `CONECTORES_CLAVE`, que Render genera.
+
+**Script de línea de comandos (opcional):** para importar al inventario desplegado, definir
 `INVENTORY_URL=https://identityhub-inventario.onrender.com`,
 `INVENTORY_SERVICE_USER=svc-inventario` e `INVENTORY_SERVICE_PASSWORD` con el valor generado
 en `identityhub-cuenta-inventario` (Render → Env Groups).

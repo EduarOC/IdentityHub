@@ -142,6 +142,10 @@ services:
       # Con la cuenta de servicio definida, el inventario rechaza (401) todo lo que no venga
       # de identityhub-panel. No se abre directamente.
       - fromGroup: identityhub-cuenta-inventario
+      # Clave con la que se cifran los secretos de los conectores (p. ej. el client secret de
+      # Entra ID) antes de guardarlos en la base. Si cambia, hay que volver a ingresarlos.
+      - key: CONECTORES_CLAVE
+        generateValue: true
 
   # Puerta de entrada al panel del inventario: la misma imagen del gateway, que exige
   # iniciar sesión en Keycloak con el rol admin-ti. Es la URL que se comparte con TI.

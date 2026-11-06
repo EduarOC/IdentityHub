@@ -44,3 +44,16 @@ def test_permiso_amplio_inactivo_supera_lectura_reciente(inv):
     amplio = inv.calcular_puntaje_riesgo("Acceso completo a Drive", AHORA - timedelta(days=200))
     lectura = inv.calcular_puntaje_riesgo("Solo lectura", AHORA - timedelta(days=2))
     assert amplio > lectura
+
+
+@pytest.mark.parametrize("alcance, base", [
+    ("Mail.ReadWrite", 70),
+    ("Files.Read.All offline_access", 70),
+    ("Directory.AccessAsUser.All", 70),
+    ("Mail.Send", 70),
+    ("Calendars.Write", 40),
+    ("openid profile email User.Read", 20),
+])
+def test_base_con_permisos_de_microsoft_graph(inv, alcance, base):
+    # Los permisos reales llegan en inglés: "ReadWrite" no es solo lectura aunque diga "Read".
+    assert inv.calcular_puntaje_riesgo(alcance, AHORA) == base

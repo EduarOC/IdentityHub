@@ -45,3 +45,25 @@ def test_panel_no_inventa_el_responsable_del_offboarding():
 
 def test_panel_ofrece_cerrar_sesion():
     assert 'href="/logout"' in HTML
+
+
+def test_panel_no_muestra_textos_de_ejemplo():
+    # El inventario se llena con los conectores: nada de "datos de ejemplo" en producción.
+    assert "ejemplo" not in HTML.lower()
+    assert "diferencial del proyecto" not in HTML
+
+
+def test_panel_tiene_integraciones_con_formulario_accesible():
+    assert 'href="#integraciones"' in HTML
+    dialogo = re.search(r'<dialog[^>]*id="config-conector"[^>]*>', HTML).group(0)
+    assert 'aria-labelledby="config-titulo"' in dialogo
+    # Cada campo va dentro de su <label> y el secreto no se autocompleta ni se muestra.
+    for campo in ("config-tenant", "config-cliente", "config-secreto"):
+        assert re.search(rf'<label class="campo">\s*<span>[^<]+</span>\s*<input id="{campo}"', HTML)
+    assert re.search(r'<input id="config-secreto"[^>]*type="password"[^>]*autocomplete="new-password"', HTML)
+    assert 'id="config-error" role="alert"' in HTML
+
+
+def test_panel_usa_la_api_de_conectores():
+    for ruta in ("/api/conectores", "/probar", "/sincronizar"):
+        assert ruta in JS

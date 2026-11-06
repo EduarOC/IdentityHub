@@ -35,16 +35,23 @@ body {
 .topbar {
     background: var(--navy);
     color: white;
-    padding: 22px 40px;
+    padding: 16px 40px;
     display: flex;
-    align-items: baseline;
-    gap: 18px;
+    align-items: center;
+    gap: 24px;
 }
 .brand { display: flex; align-items: center; gap: 8px; font-family: 'Space Grotesk', sans-serif; }
 .brand-mark { color: var(--orange); font-size: 22px; line-height: 0; }
 .brand-name { font-size: 22px; font-weight: 500; letter-spacing: -0.01em; }
 .brand-name strong { font-weight: 700; }
-.topbar-sub { color: var(--ice); font-size: 13px; opacity: 0.85; }
+.pestanas { display: flex; gap: 4px; }
+.pestana {
+    color: var(--ice); text-decoration: none; font-size: 14px; font-weight: 500;
+    padding: 6px 12px; border-radius: 8px;
+}
+.pestana:hover { color: white; background: rgba(255, 255, 255, 0.08); }
+.pestana[aria-current="page"] { color: white; background: rgba(255, 255, 255, 0.14); }
+.pestana:focus-visible { outline: 2px solid white; outline-offset: 2px; }
 .sesion { margin-left: auto; display: flex; align-items: baseline; gap: 14px; font-size: 13px; color: var(--ice); min-width: 0; }
 .sesion[hidden] { display: none; }
 .sesion-usuario { overflow-wrap: anywhere; }
@@ -78,9 +85,10 @@ body {
 .kpi-value { font-family: 'Space Grotesk', sans-serif; font-size: 30px; font-weight: 700; color: var(--navy); font-variant-numeric: tabular-nums; }
 .kpi-alert .kpi-value { color: var(--red-ink); }
 
+/* Usuarios a todo el ancho: con un tenant real son decenas de filas con correos largos. */
 .grid {
     display: grid;
-    grid-template-columns: 1.3fr 1fr;
+    grid-template-columns: 1fr;
     gap: 18px;
     margin-bottom: 18px;
 }
@@ -98,18 +106,6 @@ body {
 .panel-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; flex-wrap: wrap; gap: 6px; }
 .panel-head h2 { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 600; color: var(--navy); }
 .panel-hint { font-size: 12px; color: var(--ink-soft); }
-.diff-tag {
-    display: inline-block;
-    margin-left: 10px;
-    font-size: 10.5px;
-    font-weight: 600;
-    color: var(--orange-ink);
-    background: var(--orange-soft);
-    border-radius: 20px;
-    padding: 3px 10px;
-    vertical-align: middle;
-    letter-spacing: 0.01em;
-}
 
 .data-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .data-table th {
@@ -200,8 +196,6 @@ body {
 .risk-bar-track { height: 6px; background: var(--border); border-radius: 4px; overflow: hidden; }
 .risk-bar-fill { height: 100%; border-radius: 4px; }
 
-.foot-note { margin-top: 26px; font-size: 12px; color: var(--ink-soft); text-align: center; }
-.foot-note code { background: var(--border); padding: 1px 6px; border-radius: 4px; }
 
 .toast {
     position: fixed;
@@ -355,4 +349,86 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
     .detalle[open], .detalle[open]::backdrop { animation: none; }
+}
+
+/* ---------------------------------------------------------------- botones comunes */
+.btn-primario {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--navy); color: white; border: none; border-radius: 8px;
+    padding: 9px 16px; font: inherit; font-size: 13.5px; font-weight: 600;
+    cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.btn-primario:hover { background: var(--navy-deep); }
+.btn-primario:disabled { opacity: 0.6; cursor: progress; }
+.btn-primario:focus-visible, .btn-enlace:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.btn-enlace {
+    background: none; border: none; font: inherit; font-size: 13px; font-weight: 600;
+    color: var(--red-ink); cursor: pointer; padding: 9px 6px; border-radius: 6px;
+}
+.btn-enlace:hover { text-decoration: underline; }
+.btn-enlace:disabled { opacity: 0.5; cursor: not-allowed; text-decoration: none; }
+
+.badge-inactivo { background: var(--amber-soft); color: var(--amber-ink); }
+.badge-sincronizando { background: #E3EAFD; color: #1E3A8A; }
+
+/* ---------------------------------------------------------------- bienvenida (sin conectores) */
+.bienvenida {
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    background: var(--card); border: 1px solid var(--border); border-left: 4px solid var(--orange);
+    border-radius: 14px; padding: 20px 24px; margin-bottom: 24px;
+}
+.bienvenida[hidden] { display: none; }
+.bienvenida h2 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; color: var(--navy); margin-bottom: 4px; }
+.bienvenida p { font-size: 13.5px; color: var(--ink-soft); max-width: 640px; line-height: 1.5; }
+.estado-vacio a { color: var(--navy); font-weight: 600; }
+
+/* ---------------------------------------------------------------- integraciones */
+.vista-cabecera { margin-bottom: 22px; }
+.vista-cabecera h1 { font-family: 'Space Grotesk', sans-serif; font-size: 26px; color: var(--navy); margin-bottom: 6px; }
+.vista-cabecera p { font-size: 14px; color: var(--ink-soft); max-width: 720px; line-height: 1.5; }
+.conectores-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+.conector {
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    padding: 20px; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+}
+.conector-proximo { background: transparent; border-style: dashed; }
+.conector-cabecera { display: flex; align-items: center; gap: 14px; }
+.conector-logo {
+    flex: none; width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: white; background: var(--ink-soft);
+}
+.conector-logo-entra_id { background: #0F6CBD; }
+.conector-logo-google_workspace { background: #5F6368; }
+.conector-logo-keycloak { background: #4D4D4D; }
+.conector-titulo { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.conector-titulo h2 { font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.conector-descripcion { font-size: 13px; color: var(--ink-soft); line-height: 1.5; }
+.conector-meta { font-size: 12.5px; color: var(--ink); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.conector-error {
+    font-size: 12.5px; color: var(--red-ink); background: var(--red-soft);
+    border-radius: 8px; padding: 8px 10px; line-height: 1.45; overflow-wrap: anywhere;
+}
+.conector-acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: auto; padding-top: 6px; }
+
+/* ---------------------------------------------------------------- formulario del conector */
+.ayuda { background: var(--bg); border-radius: 10px; padding: 10px 14px; margin: 10px 0 16px; font-size: 13px; }
+.ayuda summary { cursor: pointer; font-weight: 600; color: var(--navy); }
+.ayuda ol { margin: 10px 0 2px 18px; display: flex; flex-direction: column; gap: 6px; line-height: 1.5; color: var(--ink); }
+.campo { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 13px; font-weight: 600; }
+.campo input {
+    font: inherit; font-weight: 400; font-size: 14px; padding: 9px 12px; border: 1px solid #C9D0DD;
+    border-radius: 8px; background: white; color: var(--ink); width: 100%;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.campo input:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; border-color: var(--focus); }
+.campo small { font-weight: 400; color: var(--ink-soft); font-size: 12px; }
+.config-error { color: var(--red-ink); font-size: 13px; min-height: 1em; line-height: 1.45; }
+
+@media (max-width: 860px) {
+    .topbar { flex-wrap: wrap; }
+}
+@media (max-width: 600px) {
+    .bienvenida { flex-direction: column; align-items: flex-start; }
+    .conectores-grid { grid-template-columns: 1fr; }
+    .campo input { font-size: 16px; } /* evita el zoom automático de iOS */
 }

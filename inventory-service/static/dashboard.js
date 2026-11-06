@@ -44,8 +44,27 @@ function claseRiesgo(puntaje) {
 
 async function pedirJSON(url, opciones) {
     const res = await fetch(url, opciones);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+        // La API responde {"error": "..."} con un mensaje apto para mostrar al administrador.
+        const cuerpo = await res.json().catch(() => ({}));
+        const error = new Error(cuerpo.error || `HTTP ${res.status}`);
+        error.mensaje = cuerpo.error;
+        throw error;
+    }
     return res.json();
+}
+
+function enviarJSON(url, metodo, datos) {
+    return pedirJSON(url, {
+        method: metodo,
+        headers: { "Content-Type": "application/json" },
+        body: datos === undefined ? undefined : JSON.stringify(datos),
+    });
+}
+
+// Mensaje vacío con un enlace a Integraciones, para los estados sin datos.
+function vacioConEnlace(mensaje) {
+    return [el("span", { texto: `${mensaje} ` }), el("a", { texto: "Conecta un proveedor", atributos: { href: "#integraciones" } })];
 }
 
 function filaMensaje(tbody, columnas, mensaje, clase = "estado-vacio") {
@@ -65,12 +84,24 @@ async function cargarUsuarios() {
     }
 
     if (usuarios.length === 0) {
-        filaMensaje(tbody, 5, "Todavía no hay usuarios registrados.");
+        filaMensaje(tbody, 5, "");
+        tbody.querySelector("td").replaceChildren(...vacioConEnlace("Todavía no hay usuarios."));
     } else {
         tbody.replaceChildren(...usuarios.map(filaUsuario));
     }
     document.getElementById("kpi-usuarios").textContent =
         usuarios.filter(u => u.estado === "activo").length;
+}
+
+const ESTADO_USUARIO = {
+    activo: { texto: "Activo", clase: "badge-activo" },
+    inactivo: { texto: "Inactivo", clase: "badge-inactivo" },
+    offboarding: { texto: "Offboarding", clase: "badge-offboarding" },
+};
+
+function badgeEstado(estado) {
+    const info = ESTADO_USUARIO[estado] || ESTADO_USUARIO.activo;
+    return el("span", { clase: `badge ${info.clase}`, texto: info.texto });
 }
 
 function filaUsuario(u) {
@@ -93,7 +124,7 @@ function filaUsuario(u) {
     return el("tr", {}, [
         el("td", { clase: "col-nombre" }, [enlace]),
         celda(u.correo, "col-correo"),
-        el("td", { clase: "col-estado" }, [el("span", { clase: `badge ${retirado ? "badge-offboarding" : "badge-activo"}`, texto: retirado ? "Offboarding" : "Activo" })]),
+        el("td", { clase: "col-estado" }, [badgeEstado(u.estado)]),
         el("td", { clase: "num col-accesos", texto: String(u.accesos_activos), atributos: { "data-etiqueta": "Accesos activos" } }),
         el("td", { clase: "col-accion" }, [boton]),
     ]);
@@ -138,18 +169,20 @@ async function cargarAplicativos() {
     catalogo.clear();
     apps.forEach(a => catalogo.set(a.id, a));
     if (apps.length === 0) {
-        filaMensaje(tbody, 3, "Todavía no hay aplicativos en el catálogo.");
+        filaMensaje(tbody, 3, "");
+        tbody.querySelector("td").replaceChildren(...vacioConEnlace("Todavía no hay aplicativos."));
     } else {
         tbody.replaceChildren(...apps.map(a => el("tr", {}, [
             celda(a.nombre),
             el("td", {}, [el("span", { clase: `badge badge-${a.tipo_soporte_sso}`, texto: a.tipo_soporte_sso })]),
-            celda(formatoMoneda.format(a.costo_licencia_mensual || 0), "num"),
+            // Entra ID no informa el costo de las licencias: sin dato se muestra un guion, no US$ 0.
+            celda(a.costo_licencia_mensual ? formatoMoneda.format(a.costo_licencia_mensual) : "—", "num"),
         ])));
     }
 
     const costoTotal = apps.reduce((suma, a) => suma + (a.costo_licencia_mensual || 0), 0);
     document.getElementById("kpi-apps").textContent = apps.length;
-    document.getElementById("kpi-costo").textContent = formatoMoneda.format(costoTotal);
+    document.getElementById("kpi-costo").textContent = costoTotal ? formatoMoneda.format(costoTotal) : "—";
 }
 
 // ------------------------------------------------------------------ Shadow IT
@@ -166,7 +199,7 @@ async function cargarShadowIT() {
     shadowIT.clear();
     apps.forEach(a => shadowIT.set(a.id, a));
     if (apps.length === 0) {
-        grid.replaceChildren(el("p", { clase: "estado-vacio", texto: "No se ha importado ningún hallazgo de Shadow IT todavía." }));
+        grid.replaceChildren(el("p", { clase: "estado-vacio" }, vacioConEnlace("Sin hallazgos de Shadow IT por ahora.")));
     } else {
         grid.replaceChildren(...apps.map(tarjetaShadowIT));
     }
@@ -179,7 +212,7 @@ function tarjetaShadowIT(a) {
     const puntaje = Math.round(a.puntaje_riesgo);
     const ultimoUso = a.fecha_ultimo_uso
         ? new Date(a.fecha_ultimo_uso).toLocaleDateString("es-CO", formatoFecha)
-        : "Sin registro (token huérfano)";
+        : "sin dato";
 
     const barra = el("div", { clase: "risk-bar-fill" });
     barra.style.width = `${Math.min(100, Math.max(0, a.puntaje_riesgo))}%`;
@@ -246,8 +279,9 @@ async function abrirDetalle(usuario) {
     document.getElementById("detalle-nombre").textContent = usuario.nombre;
     document.getElementById("detalle-correo").textContent = usuario.correo;
     const estado = document.getElementById("detalle-estado");
-    estado.className = `badge ${retirado ? "badge-offboarding" : "badge-activo"}`;
-    estado.textContent = retirado ? "Offboarding" : "Activo";
+    const info = ESTADO_USUARIO[usuario.estado] || ESTADO_USUARIO.activo;
+    estado.className = `badge ${info.clase}`;
+    estado.textContent = info.texto;
 
     const cuerpo = document.getElementById("detalle-cuerpo");
     cuerpo.replaceChildren(el("p", { clase: "estado-vacio", texto: "Cargando aplicativos…" }));
@@ -305,6 +339,221 @@ function prepararDetalle() {
     dialogo.addEventListener("close", () => { usuarioEnDetalle = null; });
 }
 
+// ------------------------------------------------------------------ integraciones
+const ESTADO_CONECTOR = {
+    desconectado: { texto: "No conectado", clase: "badge-offboarding" },
+    pendiente: { texto: "Sin probar", clase: "badge-proxy" },
+    conectado: { texto: "Conectado", clase: "badge-activo" },
+    sincronizando: { texto: "Sincronizando…", clase: "badge-sincronizando" },
+    error: { texto: "Requiere atención", clase: "badge-ninguno" },
+};
+const SIGLAS = { entra_id: "EN", google_workspace: "GW", keycloak: "KC" };
+let conectores = [];
+let sondeo = null;
+
+function fechaHora(iso) {
+    return new Date(iso).toLocaleString("es-CO", { ...formatoFecha, hour: "2-digit", minute: "2-digit" });
+}
+
+function textoResumen(r) {
+    return `${r.usuarios} usuarios · ${r.aplicativos} aplicaciones · ${r.shadow_it} con permisos OAuth`;
+}
+
+function boton(texto, clase, accion, etiqueta) {
+    const b = el("button", { clase, texto, atributos: { type: "button", ...(etiqueta ? { "aria-label": etiqueta } : {}) } });
+    b.addEventListener("click", () => accion(b));
+    return b;
+}
+
+function tarjetaConector(c) {
+    const estado = c.disponible ? (ESTADO_CONECTOR[c.estado] || ESTADO_CONECTOR.desconectado) : { texto: "Próximamente", clase: "badge-offboarding" };
+    const cabecera = el("div", { clase: "conector-cabecera" }, [
+        el("span", { clase: `conector-logo conector-logo-${c.tipo}`, texto: SIGLAS[c.tipo] || "··", atributos: { "aria-hidden": "true" } }),
+        el("div", { clase: "conector-titulo" }, [
+            el("h2", { texto: c.nombre }),
+            el("span", { clase: `badge ${estado.clase}`, texto: estado.texto }),
+        ]),
+    ]);
+
+    const detalles = [];
+    if (c.nombre_tenant) detalles.push(el("p", { clase: "conector-meta", texto: `Tenant: ${c.nombre_tenant}` }));
+    if (c.ultima_sincronizacion) {
+        detalles.push(el("p", { clase: "conector-meta", texto: `Última sincronización: ${fechaHora(c.ultima_sincronizacion)}` }));
+    }
+    if (c.resumen) detalles.push(el("p", { clase: "conector-meta", texto: textoResumen(c.resumen) }));
+    if (c.ultimo_error) detalles.push(el("p", { clase: "conector-error", texto: c.ultimo_error, atributos: { role: "status" } }));
+
+    const acciones = [];
+    if (!c.disponible) {
+        // Sin acciones: la tarjeta solo anuncia lo que viene.
+    } else if (c.estado === "desconectado") {
+        acciones.push(boton("Conectar", "btn-primario", () => abrirConfiguracion(c), `Conectar ${c.nombre}`));
+    } else {
+        const sincronizando = c.estado === "sincronizando";
+        if (c.estado === "pendiente") {
+            acciones.push(boton("Probar conexión", "btn-primario", b => probarYSincronizar(c, b)));
+        } else {
+            const sincronizar = boton(sincronizando ? "Sincronizando…" : "Sincronizar ahora", "btn-primario", b => sincronizarConector(c, b));
+            sincronizar.disabled = sincronizando;
+            acciones.push(sincronizar);
+        }
+        const configurar = boton("Configurar", "btn-secundario", () => abrirConfiguracion(c), `Configurar ${c.nombre}`);
+        const desconectar = boton("Desconectar", "btn-enlace", b => desconectarConector(c, b), `Desconectar ${c.nombre}`);
+        configurar.disabled = desconectar.disabled = sincronizando;
+        acciones.push(configurar, desconectar);
+    }
+
+    return el("article", { clase: `conector${c.disponible ? "" : " conector-proximo"}` }, [
+        cabecera,
+        el("p", { clase: "conector-descripcion", texto: c.descripcion }),
+        ...detalles,
+        acciones.length ? el("div", { clase: "conector-acciones" }, acciones) : el("span"),
+    ]);
+}
+
+async function cargarConectores() {
+    const grid = document.getElementById("conectores-grid");
+    try {
+        conectores = await pedirJSON("/api/conectores");
+    } catch (error) {
+        console.error("No se pudieron cargar las integraciones:", error);
+        grid.replaceChildren(el("p", { clase: "estado-error", texto: "No se pudieron cargar las integraciones." }));
+        return;
+    }
+    grid.replaceChildren(...conectores.map(tarjetaConector));
+    const algunoConectado = conectores.some(c => c.estado !== "desconectado");
+    document.getElementById("bienvenida").hidden = algunoConectado;
+    vigilarSincronizacion();
+}
+
+function vigilarSincronizacion() {
+    const enCurso = conectores.some(c => c.estado === "sincronizando");
+    if (enCurso && !sondeo) {
+        sondeo = setInterval(async () => {
+            const antes = new Map(conectores.map(c => [c.tipo, c.estado]));
+            await cargarConectores();
+            conectores.filter(c => antes.get(c.tipo) === "sincronizando" && c.estado !== "sincronizando").forEach(c => {
+                if (c.estado === "conectado") {
+                    mostrarToast(`${c.nombre} sincronizado: ${textoResumen(c.resumen)}.`);
+                    cargarTodo();
+                } else {
+                    mostrarToast(`La sincronización de ${c.nombre} falló. Revisa el mensaje en la tarjeta.`, "error");
+                }
+            });
+        }, 3000);
+    } else if (!enCurso && sondeo) {
+        clearInterval(sondeo);
+        sondeo = null;
+    }
+}
+
+let conectorEnEdicion = null;
+
+function abrirConfiguracion(c) {
+    conectorEnEdicion = c;
+    document.getElementById("config-titulo").textContent = `${c.estado === "desconectado" ? "Conectar" : "Configurar"} ${c.nombre}`;
+    document.getElementById("config-tenant").value = c.tenant_id || "";
+    document.getElementById("config-cliente").value = c.client_id || "";
+    const secreto = document.getElementById("config-secreto");
+    secreto.value = "";
+    secreto.placeholder = c.tiene_secreto ? "Guardado · déjalo vacío para conservarlo" : "";
+    document.getElementById("config-secreto-ayuda").textContent = c.tiene_secreto
+        ? "Hay un secreto guardado. Escribe uno nuevo solo si lo rotaste en Entra ID."
+        : "Se guarda cifrado y nunca se vuelve a mostrar.";
+    document.getElementById("config-error").textContent = "";
+    document.getElementById("config-conector").showModal();
+    document.getElementById("config-tenant").focus();
+}
+
+async function guardarConfiguracion(evento) {
+    evento.preventDefault();
+    const c = conectorEnEdicion;
+    const error = document.getElementById("config-error");
+    const guardar = document.getElementById("config-guardar");
+    error.textContent = "";
+    guardar.disabled = true;
+    guardar.textContent = "Guardando…";
+    try {
+        await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}`, "PUT", {
+            tenant_id: document.getElementById("config-tenant").value,
+            client_id: document.getElementById("config-cliente").value,
+            client_secret: document.getElementById("config-secreto").value,
+        });
+        guardar.textContent = "Probando conexión…";
+        const prueba = await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}/probar`, "POST");
+        document.getElementById("config-conector").close();
+        mostrarToast(`Conectado a ${prueba.nombre_tenant} · iniciando la primera sincronización…`);
+        await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}/sincronizar`, "POST");
+    } catch (fallo) {
+        console.error("No se pudo conectar:", fallo);
+        if (document.getElementById("config-conector").open) {
+            error.textContent = fallo.mensaje || "No se pudo guardar la configuración. Intenta de nuevo.";
+        } else {
+            mostrarToast(fallo.mensaje || "No se pudo iniciar la sincronización.", "error");
+        }
+    } finally {
+        guardar.disabled = false;
+        guardar.textContent = "Guardar y conectar";
+        await cargarConectores();
+    }
+}
+
+async function probarYSincronizar(c, b) {
+    b.disabled = true;
+    b.textContent = "Probando…";
+    try {
+        const prueba = await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}/probar`, "POST");
+        mostrarToast(`Conectado a ${prueba.nombre_tenant}`);
+    } catch (fallo) {
+        mostrarToast(fallo.mensaje || "La prueba de conexión falló.", "error");
+    }
+    await cargarConectores();
+}
+
+async function sincronizarConector(c, b) {
+    b.disabled = true;
+    b.textContent = "Sincronizando…";
+    try {
+        await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}/sincronizar`, "POST");
+    } catch (fallo) {
+        mostrarToast(fallo.mensaje || "No se pudo iniciar la sincronización.", "error");
+    }
+    await cargarConectores();
+}
+
+async function desconectarConector(c, b) {
+    if (!confirm(`¿Desconectar ${c.nombre}?\n\nSe borran las credenciales guardadas y se deja de sincronizar. ` +
+                 "Los usuarios, aplicativos y el historial de accesos se conservan.")) return;
+    b.disabled = true;
+    try {
+        await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}`, "DELETE");
+        mostrarToast(`${c.nombre} desconectado. El inventario se conserva.`);
+    } catch (fallo) {
+        mostrarToast(fallo.mensaje || "No se pudo desconectar.", "error");
+    }
+    await cargarConectores();
+}
+
+function prepararConfiguracion() {
+    const dialogo = document.getElementById("config-conector");
+    document.getElementById("config-formulario").addEventListener("submit", guardarConfiguracion);
+    document.getElementById("config-cancelar").addEventListener("click", () => dialogo.close());
+    dialogo.addEventListener("click", evento => {
+        if (evento.target === dialogo) dialogo.close();
+    });
+}
+
+// ------------------------------------------------------------------ vistas
+function mostrarVista() {
+    const vista = location.hash === "#integraciones" ? "integraciones" : "inventario";
+    document.getElementById("vista-inventario").hidden = vista !== "inventario";
+    document.getElementById("vista-integraciones").hidden = vista !== "integraciones";
+    document.querySelectorAll(".pestana").forEach(p => {
+        if (p.dataset.vista === vista) p.setAttribute("aria-current", "page");
+        else p.removeAttribute("aria-current");
+    });
+}
+
 // ------------------------------------------------------------------ sesión
 async function cargarSesion() {
     // Detrás del proxy el servidor sabe quién inició sesión; en desarrollo devuelve null
@@ -321,6 +570,10 @@ async function cargarTodo() {
 
 document.addEventListener("DOMContentLoaded", () => {
     prepararDetalle();
+    prepararConfiguracion();
+    mostrarVista();
+    window.addEventListener("hashchange", mostrarVista);
+    cargarConectores();
     cargarSesion().catch(error => console.error("No se pudo leer la sesión:", error));
     cargarTodo().catch(() => mostrarToast("No se pudo cargar el panel. Recarga la página.", "error"));
 });

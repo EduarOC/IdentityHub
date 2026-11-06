@@ -7,6 +7,9 @@ import pathlib
 import pytest
 
 APP_PATH = pathlib.Path(__file__).resolve().parents[1] / "app.py"
+# app.py importa módulos hermanos (conectores.py): su carpeta debe estar en la ruta de imports
+# aunque pytest se ejecute desde la raíz del repositorio.
+sys.path.insert(0, str(APP_PATH.parent))
 
 
 @pytest.fixture(scope="session")

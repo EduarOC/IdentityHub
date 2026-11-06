@@ -60,6 +60,8 @@ services:
       # Con esta clave definida, el inventario solo responde a inventory-proxy (cuenta de servicio).
       BACKEND_SERVICE_USER: svc-inventario
       BACKEND_SERVICE_PASSWORD: ${INVENTORY_SERVICE_PASSWORD:?Falta INVENTORY_SERVICE_PASSWORD en .env (copiar .env.example)}
+      # Cifra los secretos de los conectores guardados en la base.
+      CONECTORES_CLAVE: ${CONECTORES_CLAVE:?Falta CONECTORES_CLAVE en .env (copiar .env.example)}
     # El panel se abre por inventory-proxy en http://localhost:9100. El puerto 5000 queda solo
     # en esta máquina para el conector de Entra ID, que entra con la cuenta de servicio.
     ports:
