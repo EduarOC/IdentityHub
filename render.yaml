@@ -81,10 +81,11 @@ services:
       # Contraseña del usuario de prueba ana.torres (rol admin-ti), que el realm lee al importarse.
       - key: UAT_USER_PASSWORD
         sync: false
-      # Memoria para caber en 512 MB: heap y metaspace acotados, recolector de basura en serie
-      # (sin hilos extra), pilas y caché de código JIT más pequeñas.
+      # Memoria para caber en 512 MB: heap y metaspace acotados, pilas y caché de código JIT
+      # más pequeñas. No cambiar el recolector de basura: Keycloak ya fija G1 en JAVA_OPTS y
+      # Java no arranca si se elige un segundo recolector («Multiple garbage collectors»).
       - key: JAVA_OPTS_APPEND
-        value: "-Xms64m -Xmx230m -XX:MaxMetaspaceSize=150m -XX:+UseSerialGC -Xss512k -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=32m -XX:CICompilerCount=2"
+        value: "-Xms64m -Xmx230m -XX:MaxMetaspaceSize=150m -Xss512k -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=32m -XX:CICompilerCount=2"
       - fromGroup: identityhub-cliente-oidc
 
   # Gateway del aplicativo legacy: login con Keycloak para cualquier usuario del realm.
