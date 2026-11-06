@@ -192,10 +192,9 @@ def calcular_puntaje_riesgo(alcance_oauth: str, fecha_ultimo_uso):
       porque es exactamente el patrón de una cuenta de exempleado que nadie revocó (el
       hallazgo más citado en la investigación de shadow apps).
 
-    Esto es intencionalmente basado en reglas, no en Machine Learning, para la primera
-    versión: es más fácil de explicar y defender en la sustentación. Migrar a un modelo
-    entrenado con datos reales de uso es una mejora natural para el tercer corte, una vez
-    haya suficiente historial.
+    Es intencionalmente basado en reglas, no en Machine Learning: cada puntaje se puede
+    explicar a quien lo revisa. Un modelo entrenado con datos reales de uso es una mejora
+    natural cuando haya suficiente historial.
     """
     alcance = (alcance_oauth or "").lower()
 

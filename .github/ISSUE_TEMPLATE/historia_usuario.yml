@@ -1,5 +1,5 @@
 name: "📋 Historia de Usuario"
-description: Crear una historia de usuario con el mismo formato de la plantilla oficial del proyecto (sección 12.2 de los Lineamientos).
+description: Proponer una funcionalidad como historia de usuario (como, quiero, para), con prioridad y criterios de aceptación.
 title: "[HU] "
 labels: ["historia-usuario"]
 body:
