@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>IdentityHub — Panel de Control</title>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -17,7 +18,7 @@
     </header>
 
     <main class="wrap">
-        <section class="kpis" id="kpis">
+        <section class="kpis" id="kpis" aria-label="Indicadores">
             <div class="kpi-card">
                 <span class="kpi-label">Aplicativos gestionados</span>
                 <span class="kpi-value" id="kpi-apps">—</span>
@@ -42,12 +43,14 @@
                     <h2>Usuarios</h2>
                     <span class="panel-hint">Offboarding revoca todos los accesos activos, incluido Shadow IT</span>
                 </div>
-                <table class="data-table" id="tabla-usuarios">
-                    <thead>
-                        <tr><th>Nombre</th><th>Correo</th><th>Estado</th><th>Accesos activos</th><th></th></tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+                <div class="table-scroll">
+                    <table class="data-table" id="tabla-usuarios">
+                        <thead>
+                            <tr><th scope="col">Nombre</th><th scope="col">Correo</th><th scope="col">Estado</th><th scope="col" class="num">Accesos activos</th><th scope="col"><span class="sr-only">Acción</span></th></tr>
+                        </thead>
+                        <tbody><tr><td colspan="5" class="estado-vacio">Cargando usuarios…</td></tr></tbody>
+                    </table>
+                </div>
             </div>
 
             <div class="panel">
@@ -55,12 +58,14 @@
                     <h2>Catálogo de aplicativos</h2>
                     <span class="panel-hint">Registrados manualmente por TI</span>
                 </div>
-                <table class="data-table" id="tabla-aplicativos">
-                    <thead>
-                        <tr><th>Aplicativo</th><th>Soporte SSO</th><th>Costo/mes</th></tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+                <div class="table-scroll">
+                    <table class="data-table" id="tabla-aplicativos">
+                        <thead>
+                            <tr><th scope="col">Aplicativo</th><th scope="col">Soporte SSO</th><th scope="col" class="num">Costo/mes</th></tr>
+                        </thead>
+                        <tbody><tr><td colspan="3" class="estado-vacio">Cargando catálogo…</td></tr></tbody>
+                    </table>
+                </div>
             </div>
         </section>
 
@@ -69,7 +74,7 @@
                 <h2>Shadow IT descubierto <span class="diff-tag">diferencial del proyecto</span></h2>
                 <span class="panel-hint">Aplicativos conectados por OAuth sin aprobación de TI, ordenados por riesgo</span>
             </div>
-            <div class="shadow-grid" id="shadow-grid"></div>
+            <div class="shadow-grid" id="shadow-grid"><p class="estado-vacio">Cargando hallazgos…</p></div>
         </section>
 
         <footer class="foot-note">
@@ -78,7 +83,7 @@
         </footer>
     </main>
 
-    <div class="toast" id="toast"></div>
+    <output class="toast" id="toast" aria-live="polite"></output>
 
     <script src="/static/dashboard.js"></script>
 </body>
