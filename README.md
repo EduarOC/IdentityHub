@@ -132,3 +132,8 @@ como anónimos en GitHub y en SonarCloud.
 git config --global user.name "Tu Nombre"
 git config --global user.email "el-correo-de-tu-cuenta-de-github@..."
 ```
+
+## Licencia
+
+IdentityHub se distribuye bajo la [licencia Apache 2.0](LICENSE).
+Copyright 2026 Eduar de Jesús Ortiz Causil, Jhoan Steven Soto Daza y David Yused Pulido Pardo.
