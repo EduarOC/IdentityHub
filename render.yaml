@@ -19,6 +19,14 @@ envVarGroups:
         value: svc-identityhub
       - key: BACKEND_SERVICE_PASSWORD
         generateValue: true
+  # Credencial con la que inventory-proxy entra al inventario. Es distinta de la del legacy:
+  # si una se filtra, la otra sigue protegida.
+  - name: identityhub-cuenta-inventario
+    envVars:
+      - key: BACKEND_SERVICE_USER
+        value: svc-inventario
+      - key: BACKEND_SERVICE_PASSWORD
+        generateValue: true
 
 services:
   - type: web
@@ -77,8 +85,14 @@ services:
     envVars:
       - key: KEYCLOAK_URL
         value: https://identityhub-keycloak.onrender.com
+      # El navegador va a la misma URL pública de Keycloak (sin esto se usaría localhost:8080).
+      - key: KEYCLOAK_EXTERNAL_URL
+        value: https://identityhub-keycloak.onrender.com
       - key: BACKEND_URL
         value: https://identityhub-legacy.onrender.com
+      # Cookie de sesión solo por HTTPS.
+      - key: PROXY_COOKIE_SECURE
+        value: "1"
       # Clave fija para firmar las sesiones: sin ella se pierden en cada reinicio (BUG-004).
       - key: PROXY_SECRET_KEY
         generateValue: true
@@ -105,6 +119,8 @@ services:
     region: virginia
     dockerfilePath: ./inventory-service/Dockerfile
     dockerContext: ./inventory-service
+    # Única ruta que responde sin la cuenta de servicio.
+    healthCheckPath: /salud
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -112,6 +128,37 @@ services:
           property: connectionString
       - key: KEYCLOAK_URL
         value: https://identityhub-keycloak.onrender.com
+      # Con la cuenta de servicio definida, el inventario rechaza (401) todo lo que no venga
+      # de identityhub-inventory-proxy. Ya no se abre directamente.
+      - fromGroup: identityhub-cuenta-inventario
+
+  # Puerta de entrada al panel del inventario: la misma imagen del auth-proxy, que exige
+  # iniciar sesión en Keycloak con el rol admin-ti. Es la URL que se comparte con TI.
+  - type: web
+    name: identityhub-inventory-proxy
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./auth-proxy/Dockerfile
+    dockerContext: ./auth-proxy
+    envVars:
+      - key: KEYCLOAK_URL
+        value: https://identityhub-keycloak.onrender.com
+      - key: KEYCLOAK_EXTERNAL_URL
+        value: https://identityhub-keycloak.onrender.com
+      # Render le agregó el sufijo -a46j al inventario al crearlo; si se recrea, actualizar.
+      - key: BACKEND_URL
+        value: https://identityhub-inventory-a46j.onrender.com
+      - key: PROXY_REQUIRED_ROLE
+        value: admin-ti
+      - key: PROXY_COOKIE_SECURE
+        value: "1"
+      - key: PROXY_SECRET_KEY
+        generateValue: true
+      # El mismo secret del cliente auth-proxy en Keycloak; se ingresa a mano en Render.
+      - key: PROXY_CLIENT_SECRET
+        sync: false
+      - fromGroup: identityhub-cuenta-inventario
 
 databases:
   # Plan gratuito: expira 30 días después de creada y se borra 14 días más tarde, sin

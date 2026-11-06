@@ -35,3 +35,13 @@ def test_detalle_de_usuario_es_un_dialogo_accesible():
 
 def test_detalle_consulta_el_historial_de_accesos():
     assert "/accesos?historial=1" in JS
+
+
+def test_panel_no_inventa_el_responsable_del_offboarding():
+    # El servidor toma el responsable del usuario que inició sesión en el proxy.
+    assert "panel de prueba" not in JS
+    assert "/api/sesion" in JS
+
+
+def test_panel_ofrece_cerrar_sesion():
+    assert 'href="/logout"' in HTML

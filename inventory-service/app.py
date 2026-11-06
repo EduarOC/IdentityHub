@@ -6,18 +6,56 @@ y endpoints básicos de lectura. La integración real con la API de administraci
 (para ejecutar la revocación de accesos en el offboarding) es el siguiente paso técnico del
 proyecto, documentado en docs/ARQUITECTURA.md.
 """
+import hmac
 import os
 from datetime import datetime, timezone, timedelta
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, Response, jsonify, request, render_template
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 # Justificación de Seguridad (SonarCloud - CSRF):
-# Este microservicio funciona exclusivamente como una API REST. No utiliza
-# cookies de sesión del navegador para mantener el estado de autenticación.
-# Por lo tanto, el vector de ataque CSRF no es aplicable a este servicio.
+# Este servicio no emite cookies propias. En despliegue queda detrás de una instancia del
+# auth-proxy (inventory-proxy), que autentica con Keycloak, exige el rol de administrador de TI
+# y reenvía cada petición con la cuenta de servicio (HTTP Basic) y el header X-Forwarded-User.
+# La cookie de sesión vive en el proxy, que la marca SameSite=Lax y rechaza las peticiones que
+# cambian datos si llegan desde otro origen. Por eso aquí no se agrega un token CSRF.
 app = Flask(__name__)
+
+# Rutas que responden sin la cuenta de servicio: solo la verificación de salud de Render.
+RUTAS_PUBLICAS = {"/salud"}
+
+
+def _clave_servicio():
+    """Contraseña de la cuenta de servicio que usa el proxy. Si no está definida (desarrollo y
+    pruebas), el servicio no exige autenticación."""
+    return os.environ.get("BACKEND_SERVICE_PASSWORD", "")
+
+
+@app.before_request
+def exigir_cuenta_de_servicio():
+    clave = _clave_servicio()
+    if not clave or request.path in RUTAS_PUBLICAS:
+        return None
+    usuario = os.environ.get("BACKEND_SERVICE_USER", "service-account")
+    auth = request.authorization
+    valido = (
+        auth is not None
+        and hmac.compare_digest((auth.username or "").encode(), usuario.encode())
+        and hmac.compare_digest((auth.password or "").encode(), clave.encode())
+    )
+    if not valido:
+        return Response("Se requiere iniciar sesión a través de IdentityHub.", 401,
+                        {"WWW-Authenticate": 'Basic realm="identityhub-inventario"'})
+    return None
+
+
+def usuario_conectado():
+    """Correo del administrador que inició sesión en el proxy. Solo se confía en el header
+    cuando la petición pasó la cuenta de servicio; sin ella, cualquiera podría inventarlo."""
+    if not _clave_servicio():
+        return None
+    return request.headers.get("X-Forwarded-User") or None
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://identityhub:identityhub_dev_password@localhost:5432/identityhub")
 engine = create_engine(DATABASE_URL)
@@ -118,6 +156,17 @@ def calcular_puntaje_riesgo(alcance_oauth: str, fecha_ultimo_uso):
         bonus_inactividad = 15
 
     return min(100, base + bonus_inactividad)
+
+
+@app.route("/salud", methods=["GET"])
+def salud():
+    return jsonify({"estado": "ok"})
+
+
+@app.route("/api/sesion", methods=["GET"])
+def sesion_actual():
+    """Quién está usando el panel. None cuando el servicio corre sin proxy (desarrollo)."""
+    return jsonify({"usuario": usuario_conectado()})
 
 
 @app.route("/", methods=["GET"])
@@ -266,7 +315,8 @@ def iniciar_offboarding(usuario_id):
     de administración de Keycloak (deshabilitar el usuario) y al auth proxy (invalidar sesión).
     """
     data = request.get_json(silent=True) or {}
-    responsable = data.get("responsable", "desconocido")
+    # Detrás del proxy, el responsable es quien inició sesión, no lo que diga el cuerpo.
+    responsable = usuario_conectado() or data.get("responsable") or "desconocido"
 
     session = SessionLocal()
     try:

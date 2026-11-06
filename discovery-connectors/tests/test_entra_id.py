@@ -85,3 +85,18 @@ def test_importar_al_inventario(entra):
         assert entra.importar_al_inventario([{"nombre": "Canva"}]) == {"success": True}
     assert m.call_args.args[0] == "http://inventario.test/api/discovery/importar"
     assert m.call_args.kwargs["json"] == {"apps": [{"nombre": "Canva"}]}
+
+
+def test_importar_sin_clave_no_envia_credenciales(entra, monkeypatch):
+    monkeypatch.delenv("INVENTORY_SERVICE_PASSWORD", raising=False)
+    with patch.object(entra.requests, "post", return_value=_resp({"success": True})) as m:
+        entra.importar_al_inventario([{"nombre": "Canva"}])
+    assert m.call_args.kwargs["auth"] is None
+
+
+def test_importar_usa_la_cuenta_de_servicio_del_inventario(entra, monkeypatch):
+    monkeypatch.setenv("INVENTORY_SERVICE_USER", "cuenta-inventario")
+    monkeypatch.setenv("INVENTORY_SERVICE_PASSWORD", "clave-x")
+    with patch.object(entra.requests, "post", return_value=_resp({"success": True})) as m:
+        entra.importar_al_inventario([{"nombre": "Canva"}])
+    assert m.call_args.kwargs["auth"] == ("cuenta-inventario", "clave-x")

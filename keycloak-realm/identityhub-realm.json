@@ -1,6 +1,14 @@
 {
   "realm": "identityhub",
   "enabled": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "admin-ti",
+        "description": "Administrador de TI: puede entrar al panel del inventario y ejecutar offboarding."
+      }
+    ]
+  },
   "clients": [
     {
       "clientId": "auth-proxy",
@@ -13,12 +21,19 @@
       "directAccessGrantsEnabled": false,
       "redirectUris": [
         "http://localhost:9000/auth/callback",
-        "https://identityhub-auth-proxy.onrender.com/auth/callback"
+        "http://localhost:9100/auth/callback",
+        "https://identityhub-auth-proxy.onrender.com/auth/callback",
+        "https://identityhub-inventory-proxy.onrender.com/auth/callback"
       ],
       "webOrigins": [
         "http://localhost:9000",
-        "https://identityhub-auth-proxy.onrender.com"
-      ]
+        "http://localhost:9100",
+        "https://identityhub-auth-proxy.onrender.com",
+        "https://identityhub-inventory-proxy.onrender.com"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:9000/login##http://localhost:9100/login##https://identityhub-auth-proxy.onrender.com/login##https://identityhub-inventory-proxy.onrender.com/login"
+      }
     }
   ],
   "users": [
@@ -35,6 +50,9 @@
           "value": "identityhub123",
           "temporary": false
         }
+      ],
+      "realmRoles": [
+        "admin-ti"
       ]
     }
   ]

@@ -17,9 +17,10 @@ import time
 from playwright.sync_api import sync_playwright
 
 ENTORNOS = {
-    "local": {"proxy": "http://localhost:9000", "inventario": "http://localhost:5000"},
+    # El panel del inventario se abre por su propio proxy (inventory-proxy), que pide login.
+    "local": {"proxy": "http://localhost:9000", "inventario": "http://localhost:9100"},
     "render": {"proxy": "https://identityhub-auth-proxy.onrender.com",
-               "inventario": "https://identityhub-inventory.onrender.com"},
+               "inventario": "https://identityhub-inventory-proxy.onrender.com"},
 }
 MODIFICAN_DATOS = {"CP-U07", "CP-U09"}
 OCULTAR = ("#tabla-usuarios td:nth-child(1), #tabla-usuarios td:nth-child(2) "
@@ -46,8 +47,8 @@ class Uat:
     def ir(self, pagina, url):
         pagina.goto(url, wait_until="domcontentloaded", timeout=120_000)  # arranque en frío de Render
 
-    def login(self, pagina, clave):
-        self.ir(pagina, self.urls["proxy"] + "/")
+    def login(self, pagina, clave, base=None):
+        self.ir(pagina, (base or self.urls["proxy"]) + "/")
         pagina.wait_for_selector("#username", timeout=120_000)
         pagina.fill("#username", self.usuario)
         pagina.fill("#password", clave)
@@ -108,6 +109,8 @@ class Uat:
     def panel(self):
         ctx, p = self.nueva()
         self.ir(p, self.urls["inventario"] + "/")
+        if p.locator("#username").count():  # detrás de inventory-proxy: iniciar sesión primero
+            self.login(p, self.clave, self.urls["inventario"])
         p.wait_for_function("document.querySelector('#kpi-apps').textContent.trim() !== '—'", timeout=120_000)
         return ctx, p
 
@@ -167,7 +170,7 @@ def main():
 
     usuario, clave = os.environ.get("UAT_USUARIO", "ana.torres"), os.environ.get("UAT_CLAVE")
     casos = {c.strip().upper() for c in args.casos.split(",")}
-    necesitan_login = {"CP-U01", "CP-U02", "CP-U04", "CP-U05"}
+    necesitan_login = {"CP-U01", "CP-U02", "CP-U04", "CP-U05", "CP-U06", "CP-U07", "CP-U09", "CP-U10"}
     if casos & necesitan_login and not clave:
         sys.exit("Define UAT_CLAVE con la contraseña del usuario de prueba.")
 

@@ -54,8 +54,10 @@ services:
     environment:
       DATABASE_URL: postgresql://identityhub:${POSTGRES_PASSWORD}@postgres:5432/identityhub
       KEYCLOAK_URL: http://keycloak:8080
-    ports:
-      - "5000:5000"
+      # Con esta clave definida, el inventario solo responde a inventory-proxy (cuenta de servicio).
+      BACKEND_SERVICE_USER: svc-inventario
+      BACKEND_SERVICE_PASSWORD: ${INVENTORY_SERVICE_PASSWORD:?Falta INVENTORY_SERVICE_PASSWORD en .env (copiar .env.example)}
+    # Sin puerto publicado: el panel se abre por inventory-proxy en http://localhost:9100.
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,6 +89,27 @@ services:
     depends_on:
       - keycloak
       - legacy-app-demo
+    mem_limit: 256m
+
+  # Segunda instancia del mismo auth-proxy, delante del inventario: login con Keycloak y solo
+  # usuarios con el rol admin-ti. Panel en http://localhost:9100.
+  inventory-proxy:
+    build: ./auth-proxy
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: identityhub
+      PROXY_CLIENT_ID: auth-proxy
+      PROXY_CLIENT_SECRET: ${PROXY_CLIENT_SECRET:?Falta PROXY_CLIENT_SECRET en .env (copiar .env.example)}
+      PROXY_REQUIRED_ROLE: admin-ti
+      PORT: "9100"
+      BACKEND_URL: http://inventory-service:5000
+      BACKEND_SERVICE_USER: svc-inventario
+      BACKEND_SERVICE_PASSWORD: ${INVENTORY_SERVICE_PASSWORD:?Falta INVENTORY_SERVICE_PASSWORD en .env (copiar .env.example)}
+    ports:
+      - "9100:9100"
+    depends_on:
+      - keycloak
+      - inventory-service
     mem_limit: 256m
 
 volumes:
