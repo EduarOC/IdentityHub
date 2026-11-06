@@ -81,9 +81,10 @@ services:
       # Contraseña del usuario de prueba ana.torres (rol admin-ti), que el realm lee al importarse.
       - key: UAT_USER_PASSWORD
         sync: false
-      # Límites de memoria probados para caber en 512 MB.
+      # Memoria para caber en 512 MB: heap y metaspace acotados, recolector de basura en serie
+      # (sin hilos extra), pilas y caché de código JIT más pequeñas.
       - key: JAVA_OPTS_APPEND
-        value: "-Xms128m -Xmx250m -XX:MaxMetaspaceSize=150m"
+        value: "-Xms64m -Xmx230m -XX:MaxMetaspaceSize=150m -XX:+UseSerialGC -Xss512k -XX:ReservedCodeCacheSize=48m -XX:MaxDirectMemorySize=32m -XX:CICompilerCount=2"
       - fromGroup: identityhub-cliente-oidc
 
   # Gateway del aplicativo legacy: login con Keycloak para cualquier usuario del realm.
