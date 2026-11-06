@@ -55,23 +55,23 @@ services:
         value: "true"
       - key: KC_DB_URL_HOST
         fromDatabase:
-          name: identityhub-db
+          name: identityhub-datos
           property: host
       - key: KC_DB_URL_PORT
         fromDatabase:
-          name: identityhub-db
+          name: identityhub-datos
           property: port
       - key: KC_DB_URL_DATABASE
         fromDatabase:
-          name: identityhub-db
+          name: identityhub-datos
           property: database
       - key: KC_DB_USERNAME
         fromDatabase:
-          name: identityhub-db
+          name: identityhub-datos
           property: user
       - key: KC_DB_PASSWORD
         fromDatabase:
-          name: identityhub-db
+          name: identityhub-datos
           property: password
       - key: KEYCLOAK_ADMIN
         value: admin
@@ -133,7 +133,7 @@ services:
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: identityhub-db
+          name: identityhub-datos
           property: connectionString
       - key: KEYCLOAK_URL
         value: https://identityhub-sso.onrender.com
@@ -169,7 +169,7 @@ services:
 databases:
   # Plan gratuito: expira 30 días después de creada y se borra 14 días más tarde, sin
   # respaldos. Para uso continuo, pasarla a un plan pago (Basic) antes de esa fecha.
-  - name: identityhub-db
+  - name: identityhub-datos
     plan: free
     region: virginia
     databaseName: identityhub

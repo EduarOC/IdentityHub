@@ -10,7 +10,7 @@ en una cuenta propia de Render.
 | `identityhub-gateway` | <https://identityhub-gateway.onrender.com> | Login delante del aplicativo legacy |
 | `identityhub-inventario` | `https://identityhub-inventario.onrender.com` | API del inventario; responde `401` si no llega por el panel |
 | `identityhub-legacy-app` | `https://identityhub-legacy-app.onrender.com` | Aplicativo legacy de demostración |
-| `identityhub-db` | — | PostgreSQL (Keycloak e inventario) |
+| `identityhub-datos` | — | PostgreSQL (Keycloak e inventario) |
 
 ## 1. Crear el Blueprint
 
