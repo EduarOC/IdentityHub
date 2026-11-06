@@ -103,6 +103,7 @@ async function ejecutarOffboarding(usuarioId, nombre, boton) {
         mostrarToast(`Offboarding de ${nombre} completado. Revocado: ${lista}`);
         await cargarUsuarios();
     } catch (error) {
+        console.error("Offboarding fallido:", error);
         boton.disabled = false;
         boton.textContent = "Iniciar offboarding";
         mostrarToast(`No se pudo completar el offboarding de ${nombre}. Intenta de nuevo.`, "error");

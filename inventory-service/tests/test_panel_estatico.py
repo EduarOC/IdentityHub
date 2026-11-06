@@ -15,7 +15,7 @@ def test_panel_no_inserta_html_con_datos_del_servidor():
 
 
 def test_panel_anuncia_los_mensajes_a_lectores_de_pantalla():
-    toast = re.search(r'<div[^>]*id="toast"[^>]*>', HTML).group(0)
+    toast = re.search(r'<output[^>]*id="toast"[^>]*>', HTML).group(0)
     assert 'aria-live="polite"' in toast
 
 
