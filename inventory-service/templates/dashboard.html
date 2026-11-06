@@ -127,11 +127,11 @@
             <header class="detalle-cabecera">
                 <div>
                     <h2 id="config-titulo">Conectar Microsoft Entra ID</h2>
-                    <p class="detalle-correo">Lectura de usuarios, aplicaciones empresariales y permisos OAuth</p>
+                    <p class="detalle-correo" id="config-subtitulo">Lectura de usuarios, aplicaciones empresariales y permisos OAuth</p>
                 </div>
             </header>
             <div class="detalle-cuerpo">
-                <details class="ayuda">
+                <details class="ayuda" data-ayuda="entra_id">
                     <summary>Cómo obtener estos datos (5 minutos, requiere un administrador de Entra ID)</summary>
                     <ol>
                         <li>En el <strong>Microsoft Entra admin center</strong>, ve a <em>Applications → App registrations → New registration</em> y créala con el nombre «IdentityHub».</li>
@@ -140,16 +140,25 @@
                         <li>En <em>Overview</em>, copia el <strong>Directory (tenant) ID</strong> y el <strong>Application (client) ID</strong>.</li>
                     </ol>
                 </details>
+                <details class="ayuda" data-ayuda="keycloak" hidden>
+                    <summary>Cómo obtener estos datos (3 minutos, en la consola de Keycloak)</summary>
+                    <ol>
+                        <li>Entra a la consola de administración (<span id="config-servidor-kc"></span>/admin) y elige el realm de tus usuarios.</li>
+                        <li><em>Clients → Create client</em>: Client ID <strong>identityhub-inventario</strong>. En el siguiente paso activa <em>Client authentication</em> y <em>Service accounts roles</em>, y desactiva <em>Standard flow</em>.</li>
+                        <li>En la pestaña <em>Service accounts roles → Assign role → Filter by clients</em>, asigna <strong>view-users</strong> y <strong>manage-users</strong> de <em>realm-management</em>.</li>
+                        <li>En la pestaña <em>Credentials</em>, copia el <strong>Client secret</strong>.</li>
+                    </ol>
+                </details>
                 <label class="campo">
-                    <span>Directory (tenant) ID</span>
+                    <span id="config-tenant-etiqueta">Directory (tenant) ID</span>
                     <input id="config-tenant" name="tenant_id" required autocomplete="off" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
                 </label>
                 <label class="campo">
-                    <span>Application (client) ID</span>
+                    <span id="config-cliente-etiqueta">Application (client) ID</span>
                     <input id="config-cliente" name="client_id" required autocomplete="off" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
                 </label>
                 <label class="campo">
-                    <span>Client secret (Value)</span>
+                    <span id="config-secreto-etiqueta">Client secret (Value)</span>
                     <input id="config-secreto" name="client_secret" type="password" autocomplete="new-password" spellcheck="false">
                     <small id="config-secreto-ayuda">Se guarda cifrado y nunca se vuelve a mostrar.</small>
                 </label>

@@ -21,7 +21,7 @@ Las pruebas de aceptación demuestran, desde la interfaz, que cada historia de u
 | CP-U08 | HU-06 / RNF-10 | Offboarding en máximo 3 clics sin capacitación | Manual (una persona real) |
 | CP-U09 | HU-08 | El retiro queda registrado con responsable, fecha y aplicativos | Sí, **solo en local** (vía API) |
 | CP-U10 | HU-10 | Shadow IT ordenado de mayor a menor riesgo | Sí |
-| CP-U11 | HU-07 | Bloqueo en Keycloak tras el retiro | Se espera que **falle** mientras RF-08 esté pendiente |
+| CP-U11 | HU-07 | Bloqueo en Keycloak tras el retiro | Sí, **solo en local** y con el conector de Keycloak conectado; se lee del mismo offboarding de CP-U07 |
 
 ## Cómo ejecutarlo
 
@@ -46,5 +46,5 @@ Salida en `evidencias-uat/<fecha>-<entorno>/` (ignorada por git):
 
 - **CP-U07 y CP-U09 modifican datos** (revocan los accesos de un usuario). El script los omite en Render; ejecútalos solo en local o con el permiso explícito del equipo.
 - **Datos personales:** si el entorno tiene datos reales (un tenant real), revisa cada captura antes de subirla. El difuminado cubre las columnas de nombre y correo de la tabla de usuarios, no textos que aparezcan en otros lugares.
-- **No inventes resultados.** Un caso que no se pudo ejecutar queda como «Omitido» con el motivo; CP-U11 queda como «Fallo esperado» hasta que exista RF-08.
+- **No inventes resultados.** Un caso que no se pudo ejecutar queda como «Omitido» con el motivo; CP-U11 queda «Omitido» si el conector de Keycloak no está conectado.
 - Al terminar, sube la carpeta a `07_QA_y_UAT` del Drive y actualiza la tabla de casos UAT del plan de pruebas.

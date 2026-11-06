@@ -59,7 +59,7 @@ def test_panel_tiene_integraciones_con_formulario_accesible():
     assert 'aria-labelledby="config-titulo"' in dialogo
     # Cada campo va dentro de su <label> y el secreto no se autocompleta ni se muestra.
     for campo in ("config-tenant", "config-cliente", "config-secreto"):
-        assert re.search(rf'<label class="campo">\s*<span>[^<]+</span>\s*<input id="{campo}"', HTML)
+        assert re.search(rf'<label class="campo">\s*<span[^>]*>[^<]+</span>\s*<input id="{campo}"', HTML)
     assert re.search(r'<input id="config-secreto"[^>]*type="password"[^>]*autocomplete="new-password"', HTML)
     assert 'id="config-error" role="alert"' in HTML
 

@@ -4,7 +4,7 @@ Uso:
     UAT_USUARIO=ana.torres UAT_CLAVE=... python uat.py --entorno local|render [--casos CP-U01,CP-U06] [--salida DIR]
 
 Las capturas difuminan las columnas de nombre y correo de la tabla de usuarios antes de
-tomarse. CP-U07 y CP-U09 modifican datos y solo corren en el entorno local.
+tomarse. CP-U07, CP-U09 y CP-U11 modifican datos y solo corren en el entorno local.
 """
 import argparse
 import datetime as dt
@@ -22,7 +22,7 @@ ENTORNOS = {
     "render": {"proxy": "https://identityhub-gateway.onrender.com",
                "inventario": "https://identityhub-panel.onrender.com"},
 }
-MODIFICAN_DATOS = {"CP-U07", "CP-U09"}
+MODIFICAN_DATOS = {"CP-U07", "CP-U09", "CP-U11"}
 OCULTAR = ("#tabla-usuarios td:nth-child(1), #tabla-usuarios td:nth-child(2) "
            "{ filter: blur(6px) !important; }")
 
@@ -145,6 +145,13 @@ class Uat:
             self.anotar("CP-U09", "Aprobado" if ok else "Fallido",
                         "La API registró el evento de retiro con los aplicativos revocados "
                         "(verificar responsable y fecha en la tabla eventos_offboarding)")
+        if "CP-U11" in casos:
+            sso = datos.get("sso", {})
+            if sso.get("resultado") == "sin_conector":
+                self.anotar("CP-U11", "Omitido", "El conector de Keycloak no está conectado en Integraciones")
+            else:
+                ok = sso.get("resultado") == "deshabilitado"
+                self.anotar("CP-U11", "Aprobado" if ok else "Fallido", sso.get("mensaje", "Sin resultado del SSO"))
         ctx.close()
 
     def cp_u10(self):
@@ -184,7 +191,7 @@ def main():
         pasos = [
             ("CP-U01", u.cp_u01), ("CP-U02", u.cp_u02), ("CP-U03", u.cp_u03),
             ("CP-U04|CP-U05", lambda: u.cp_u04_u05(casos)), ("CP-U06", u.cp_u06),
-            ("CP-U07|CP-U09", lambda: u.cp_u07_u09(casos)), ("CP-U10", u.cp_u10),
+            ("CP-U07|CP-U09|CP-U11", lambda: u.cp_u07_u09(casos)), ("CP-U10", u.cp_u10),
         ]
         for ids, fn in pasos:
             ids_set = set(ids.split("|")) & casos
@@ -201,8 +208,6 @@ def main():
                     u.anotar(c, "Fallido", f"Error al ejecutar: {type(e).__name__}: {str(e)[:160]}")
         if "CP-U08" in casos:
             u.anotar("CP-U08", "Manual", "Requiere una persona sin capacitación que cuente los clics")
-        if "CP-U11" in casos:
-            u.anotar("CP-U11", "Fallo esperado", "RF-08 pendiente: el retiro aún no bloquea la cuenta en Keycloak")
         nav.close()
 
     orden = {f"CP-U{n:02d}": n for n in range(1, 12)}

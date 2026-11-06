@@ -61,11 +61,12 @@ def test_offboarding_usuario_inexistente(client, con_datos):
     assert r.get_json()["error"] == "Usuario no encontrado"
 
 
-def test_offboarding_indica_que_keycloak_es_simulado(client, con_datos):
-    # RF-08 sigue pendiente: la API lo advierte explícitamente y la prueba lo deja registrado.
+def test_offboarding_sin_conector_de_keycloak_lo_advierte(client, con_datos):
+    # Sin el conector de Keycloak, la API dice explícitamente que la cuenta en el SSO sigue activa.
     ana = _id_de(client, "Ana Torres")
-    nota = client.post(f"/api/usuarios/{ana}/offboarding", json={}).get_json()["nota"]
-    assert "Keycloak" in nota
+    sso = client.post(f"/api/usuarios/{ana}/offboarding", json={}).get_json()["sso"]
+    assert sso["resultado"] == "sin_conector"
+    assert "Keycloak" in sso["mensaje"]
 
 
 def test_offboarding_sin_cuerpo_json_responde_json(client, con_datos):

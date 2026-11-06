@@ -72,7 +72,10 @@ def test_listado_inicial_muestra_el_catalogo_sin_configurar(client):
     assert entra["disponible"] is True
     assert entra["estado"] == "desconectado"
     assert entra["tiene_secreto"] is False
-    assert all(c["disponible"] is False for c in conectores[1:])
+    assert conectores[1]["disponible"] is False
+    assert conectores[2]["disponible"] is True
+    assert entra["sincroniza"] is True
+    assert conectores[2]["sincroniza"] is False
 
 
 def test_configurar_guarda_el_secreto_cifrado_y_nunca_lo_devuelve(client, inv):
@@ -129,7 +132,7 @@ def test_configurar_sin_clave_de_cifrado_responde_503(client, inv, monkeypatch):
         assert s.query(inv.Conector).count() == 0
 
 
-@pytest.mark.parametrize("tipo", ["google_workspace", "keycloak", "inexistente"])
+@pytest.mark.parametrize("tipo", ["google_workspace", "inexistente"])
 def test_conectores_no_disponibles_responden_404(client, tipo):
     assert client.put(f"/api/conectores/{tipo}", json={}).status_code == 404
     assert client.post(f"/api/conectores/{tipo}/probar").status_code == 404
