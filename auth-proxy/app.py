@@ -26,9 +26,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # validar tokens CSRF intermediados. Por eso la defensa vive aquí, sin tokens: la cookie de
 # sesión es SameSite=Lax y las peticiones que cambian datos (POST, PUT, PATCH, DELETE) se
 # rechazan si Origin o Referer indican otro sitio (ver _mismo_origen).
-# Sin carpeta estática propia: Flask atiende /static/... por defecto y así interceptaba los
-# estilos y el JavaScript del aplicativo protegido (el panel del inventario quedaba sin ellos).
-app = Flask(__name__, static_folder=None)  # NOSONAR: CSRF cubierto por SameSite y _mismo_origen (ver arriba)
+app = Flask(__name__)
 app.secret_key = os.environ.get("PROXY_SECRET_KEY") or os.urandom(24).hex()
 # En Render, HTTPS termina en el balanceador y llega HTTP al contenedor. ProxyFix hace que
 # Flask respete X-Forwarded-Proto/Host, para que la URL de retorno a Keycloak sea https://.
@@ -218,6 +216,12 @@ def proxy(path):
     if request.method not in ("GET", "HEAD", "OPTIONS") and not _mismo_origen():
         return Response("Origen no permitido", status=403, mimetype="text/plain")
     return _reenviar_a_backend(path)
+
+
+# Flask registra por defecto /static/<archivo> para su propia carpeta estática, que el proxy no
+# tiene: respondía 404 y el panel del inventario quedaba sin estilos ni JavaScript. Esa ruta
+# pasa por el mismo control de sesión y reenvío que las demás.
+app.view_functions["static"] = lambda filename: proxy(f"static/{filename}")
 
 
 if __name__ == "__main__":
