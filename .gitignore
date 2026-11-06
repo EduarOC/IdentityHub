@@ -19,3 +19,9 @@ sonar-scanner.zip
 .pytest_cache/
 .coverage
 coverage.xml
+
+# Skills de Claude Code: artefactos locales
+.claude/skills/revisar-panel/capturas/
+.claude/skills/revisar-panel/.panel.*
+.claude/skills/impeccable/scripts/bin/
+evidencias-uat/
