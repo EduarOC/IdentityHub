@@ -103,12 +103,13 @@ repositorio. Si falta alguna, Docker Compose se detiene e indica cuál.
 | Consola de Keycloak | http://localhost:8080 | las de `KEYCLOAK_ADMIN_PASSWORD` en `.env` |
 
 Al abrir `http://localhost:9000`, el proxy redirige al login de Keycloak; tras iniciar sesión se
-entra al aplicativo legacy sin ingresar ninguna credencial propia de esa app. El panel arranca con
-datos de ejemplo ilustrativos.
+entra al aplicativo legacy sin ingresar ninguna credencial propia de esa app. El panel arranca
+vacío: se llena conectando el tenant en **Integraciones**. Para revisar la interfaz con datos
+ilustrativos, arranca el inventario con `SEMBRAR_DATOS_EJEMPLO=1`.
 
-**Shadow IT contra la empresa real:** ver `discovery-connectors/entra_id.py` para el registro de
-la app en Entra ID, los permisos y el consentimiento de administrador. Solo se ejecuta contra el
-tenant real con aprobación de Seguridad Informática.
+**Conectar el tenant real:** en el panel, pestaña **Integraciones → Microsoft Entra ID**. El
+registro de la app en Entra ID, el permiso de solo lectura y lo que se sincroniza están en
+`docs/CONECTORES.md`.
 
 ## Cómo correr las pruebas
 

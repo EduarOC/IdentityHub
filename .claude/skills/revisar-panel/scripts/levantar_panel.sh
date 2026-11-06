@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Levanta el panel del inventario en local con una base SQLite temporal y datos de ejemplo.
+# Levanta el panel del inventario en local con una base SQLite temporal y datos de ejemplo
+# (SEMBRAR_DATOS_EJEMPLO=1; en despliegue el inventario se llena con los conectores).
 # Uso:  bash levantar_panel.sh          -> inicia en http://127.0.0.1:${PANEL_PORT:-5055}
 #       bash levantar_panel.sh stop     -> detiene el servidor
 set -euo pipefail
@@ -26,7 +27,7 @@ python -c "import flask, sqlalchemy" 2>/dev/null || {
 
 rm -f "$DB"
 cd "$RAIZ/inventory-service"
-DATABASE_URL="sqlite:///$DB" HOST=127.0.0.1 PORT="$PUERTO" nohup python app.py >"$DIR/.panel.log" 2>&1 &
+SEMBRAR_DATOS_EJEMPLO=1 CONECTORES_CLAVE=revisar-panel-local DATABASE_URL="sqlite:///$DB" HOST=127.0.0.1 PORT="$PUERTO" nohup python app.py >"$DIR/.panel.log" 2>&1 &
 echo $! > "$PIDFILE"
 
 for _ in $(seq 1 40); do

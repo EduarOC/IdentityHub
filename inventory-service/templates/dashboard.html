@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IdentityHub — Panel de Control</title>
+    <title>IdentityHub — Panel de administración</title>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/static/style.css">
@@ -14,14 +14,25 @@
             <span class="brand-mark">●</span>
             <span class="brand-name">Identity<strong>Hub</strong></span>
         </div>
-        <div class="topbar-sub">Panel de administración · datos de ejemplo</div>
+        <nav class="pestanas" aria-label="Secciones">
+            <a class="pestana" href="#inventario" data-vista="inventario">Inventario</a>
+            <a class="pestana" href="#integraciones" data-vista="integraciones">Integraciones</a>
+        </nav>
         <div class="sesion" id="sesion" hidden>
             <span class="sesion-usuario">Sesión de <strong id="sesion-usuario"></strong></span>
             <a class="sesion-salir" href="/logout">Cerrar sesión</a>
         </div>
     </header>
 
-    <main class="wrap">
+    <main class="wrap" id="vista-inventario">
+        <section class="bienvenida" id="bienvenida" hidden>
+            <div>
+                <h2>Conecta tu primer proveedor de identidad</h2>
+                <p>IdentityHub trae los usuarios, las aplicaciones empresariales y los permisos OAuth de tu tenant para detectar accesos olvidados y Shadow IT.</p>
+            </div>
+            <a class="btn-primario" href="#integraciones">Ir a Integraciones</a>
+        </section>
+
         <section class="kpis" id="kpis" aria-label="Indicadores">
             <div class="kpi-card">
                 <span class="kpi-label">Aplicativos gestionados</span>
@@ -60,7 +71,7 @@
             <div class="panel">
                 <div class="panel-head">
                     <h2>Catálogo de aplicativos</h2>
-                    <span class="panel-hint">Registrados manualmente por TI</span>
+                    <span class="panel-hint">Aplicaciones empresariales de tus conectores</span>
                 </div>
                 <div class="table-scroll">
                     <table class="data-table" id="tabla-aplicativos">
@@ -75,16 +86,22 @@
 
         <section class="panel panel-shadow">
             <div class="panel-head">
-                <h2>Shadow IT descubierto <span class="diff-tag">diferencial del proyecto</span></h2>
+                <h2>Shadow IT descubierto</h2>
                 <span class="panel-hint">Aplicativos conectados por OAuth sin aprobación de TI, ordenados por riesgo</span>
             </div>
             <div class="shadow-grid" id="shadow-grid"><p class="estado-vacio">Cargando hallazgos…</p></div>
         </section>
 
-        <footer class="foot-note">
-            Datos de ejemplo ilustrativos — no corresponden a ninguna empresa real. Ver
-            <code>docs/INVESTIGACION_PENDIENTE.md</code> para reemplazarlos por el catálogo real.
-        </footer>
+    </main>
+
+    <main class="wrap" id="vista-integraciones" hidden>
+        <div class="vista-cabecera">
+            <h1>Integraciones</h1>
+            <p>Conecta tus proveedores de identidad para mantener el inventario al día. IdentityHub solo lee: no cambia nada en tus tenants.</p>
+        </div>
+        <section class="conectores-grid" id="conectores-grid" aria-live="polite">
+            <p class="estado-vacio">Cargando integraciones…</p>
+        </section>
     </main>
 
     <dialog class="detalle" id="detalle-usuario" aria-labelledby="detalle-nombre">
@@ -103,6 +120,46 @@
                 <button type="button" class="btn-offboard" id="detalle-offboard">Iniciar offboarding</button>
             </footer>
         </div>
+    </dialog>
+
+    <dialog class="detalle" id="config-conector" aria-labelledby="config-titulo">
+        <form class="detalle-tarjeta" id="config-formulario" method="dialog" novalidate>
+            <header class="detalle-cabecera">
+                <div>
+                    <h2 id="config-titulo">Conectar Microsoft Entra ID</h2>
+                    <p class="detalle-correo">Lectura de usuarios, aplicaciones empresariales y permisos OAuth</p>
+                </div>
+            </header>
+            <div class="detalle-cuerpo">
+                <details class="ayuda">
+                    <summary>Cómo obtener estos datos (5 minutos, requiere un administrador de Entra ID)</summary>
+                    <ol>
+                        <li>En el <strong>Microsoft Entra admin center</strong>, ve a <em>Applications → App registrations → New registration</em> y créala con el nombre «IdentityHub».</li>
+                        <li>En <em>API permissions</em>, agrega <em>Microsoft Graph → Application permissions → Directory.Read.All</em> y pulsa <em>Grant admin consent</em>.</li>
+                        <li>En <em>Certificates &amp; secrets</em>, crea un <em>client secret</em> y copia su <strong>Value</strong> (solo se muestra una vez).</li>
+                        <li>En <em>Overview</em>, copia el <strong>Directory (tenant) ID</strong> y el <strong>Application (client) ID</strong>.</li>
+                    </ol>
+                </details>
+                <label class="campo">
+                    <span>Directory (tenant) ID</span>
+                    <input id="config-tenant" name="tenant_id" required autocomplete="off" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
+                </label>
+                <label class="campo">
+                    <span>Application (client) ID</span>
+                    <input id="config-cliente" name="client_id" required autocomplete="off" spellcheck="false" placeholder="00000000-0000-0000-0000-000000000000">
+                </label>
+                <label class="campo">
+                    <span>Client secret (Value)</span>
+                    <input id="config-secreto" name="client_secret" type="password" autocomplete="new-password" spellcheck="false">
+                    <small id="config-secreto-ayuda">Se guarda cifrado y nunca se vuelve a mostrar.</small>
+                </label>
+                <p class="config-error" id="config-error" role="alert"></p>
+            </div>
+            <footer class="detalle-acciones">
+                <button type="button" class="btn-secundario" id="config-cancelar">Cancelar</button>
+                <button type="submit" class="btn-primario" id="config-guardar">Guardar y conectar</button>
+            </footer>
+        </form>
     </dialog>
 
     <output class="toast" id="toast" aria-live="polite"></output>

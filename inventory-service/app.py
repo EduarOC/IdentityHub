@@ -1,18 +1,21 @@
 """
 IdentityHub - Servicio de Inventario
 
-Catálogo de aplicativos, usuarios y accesos. Este es el esqueleto inicial: modelo de datos
-y endpoints básicos de lectura. La integración real con la API de administración de Keycloak
-(para ejecutar la revocación de accesos en el offboarding) es el siguiente paso técnico del
-proyecto, documentado en docs/ARQUITECTURA.md.
+Catálogo de aplicativos, usuarios y accesos, alimentado por conectores con el proveedor de
+identidad de la empresa (hoy Microsoft Entra ID; ver conectores.py y docs/CONECTORES.md).
+La revocación real en Keycloak durante el offboarding sigue pendiente (RF-08).
 """
 import hmac
+import json
 import os
+import threading
 from datetime import datetime, timezone, timedelta
 
 from flask import Flask, Response, jsonify, request, render_template
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey
+from sqlalchemy import create_engine, inspect, text, Column, Integer, String, Float, DateTime, ForeignKey, Text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+
+import conectores
 
 # Justificación de Seguridad (SonarCloud - CSRF):
 # Este servicio no emite cookies propias. En despliegue queda detrás de una instancia del
@@ -81,6 +84,8 @@ class Aplicativo(Base):
     fecha_ultimo_uso = Column(DateTime, nullable=True)
     # Calculado por calcular_puntaje_riesgo() a partir del alcance y la inactividad. 0-100.
     puntaje_riesgo = Column(Float, nullable=True)
+    # Identificador en el proveedor (p. ej. id del service principal en Entra ID).
+    id_externo = Column(String, nullable=True)
 
     accesos = relationship("Acceso", back_populates="aplicativo")
 
@@ -93,6 +98,9 @@ class Usuario(Base):
     keycloak_id = Column(String, nullable=True)
     # 'activo', 'offboarding', 'inactivo'
     estado = Column(String, nullable=False, default="activo")
+    # 'manual' o el conector que lo trajo ('entra_id'), con su identificador allá.
+    origen = Column(String, nullable=False, default="manual")
+    id_externo = Column(String, nullable=True)
 
     accesos = relationship("Acceso", back_populates="usuario")
 
@@ -104,6 +112,8 @@ class Acceso(Base):
     aplicativo_id = Column(Integer, ForeignKey("aplicativos.id"), nullable=False)
     fecha_otorgado = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     fecha_revocado = Column(DateTime, nullable=True)
+    # 'manual' o el conector que lo registró. La sincronización solo revoca los suyos.
+    origen = Column(String, nullable=False, default="manual")
 
     usuario = relationship("Usuario", back_populates="accesos")
     aplicativo = relationship("Aplicativo", back_populates="accesos")
@@ -116,6 +126,36 @@ class EventoOffboarding(Base):
     fecha = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     aplicativos_revocados = Column(String)  # lista separada por comas, para el MVP
     responsable = Column(String, nullable=False)
+
+
+class Conector(Base):
+    """Conexión con un proveedor de identidad. El secreto se guarda cifrado (conectores.cifrar)
+    y la API nunca lo devuelve: solo informa si existe."""
+    __tablename__ = "conectores"
+    id = Column(Integer, primary_key=True)
+    tipo = Column(String, nullable=False, unique=True)  # 'entra_id'
+    tenant_id = Column(String, nullable=True)
+    client_id = Column(String, nullable=True)
+    secreto_cifrado = Column(Text, nullable=True)
+    # 'desconectado', 'pendiente' (guardado sin probar), 'conectado', 'sincronizando', 'error'
+    estado = Column(String, nullable=False, default="desconectado")
+    nombre_tenant = Column(String, nullable=True)
+    ultimo_error = Column(String, nullable=True)
+    ultima_sincronizacion = Column(DateTime, nullable=True)
+    resumen = Column(Text, nullable=True)  # JSON con los conteos de la última sincronización
+    actualizado_por = Column(String, nullable=True)
+    actualizado_en = Column(DateTime, nullable=True)
+
+
+class EventoConector(Base):
+    """Auditoría de cambios en los conectores (configurar, probar, sincronizar, desconectar)."""
+    __tablename__ = "eventos_conector"
+    id = Column(Integer, primary_key=True)
+    tipo = Column(String, nullable=False)
+    accion = Column(String, nullable=False)
+    responsable = Column(String, nullable=False)
+    fecha = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    detalle = Column(String, nullable=True)
 
 
 def calcular_puntaje_riesgo(alcance_oauth: str, fecha_ultimo_uso):
@@ -135,8 +175,14 @@ def calcular_puntaje_riesgo(alcance_oauth: str, fecha_ultimo_uso):
     """
     alcance = (alcance_oauth or "").lower()
 
-    if any(p in alcance for p in ["completo", "full", "administrador", "admin", "todos los datos"]):
+    # Además de las descripciones en español, se reconocen los permisos de Microsoft Graph
+    # (p. ej. "Mail.ReadWrite Files.Read.All"): todo lo que abarca el tenant entero (.All),
+    # escribe o envía no puede quedar como "solo lectura" aunque contenga la palabra "Read".
+    if any(p in alcance for p in ["completo", "full", "administrador", "admin", "todos los datos",
+                                  "readwrite", ".all", "directory.", "mail.send"]):
         base = 70
+    elif any(p in alcance for p in ["write", "send", "manage"]):
+        base = 40
     elif any(p in alcance for p in ["lectura", "read", "solo perfil", "basico", "básico"]):
         base = 20
     else:
@@ -269,14 +315,16 @@ def listar_por_riesgo():
 
 @app.route("/api/aplicativos", methods=["GET"])
 def listar_aplicativos():
-    """Catálogo de aplicativos registrados manualmente por TI (excluye los descubiertos vía
-    Shadow IT, que tienen su propia vista en /api/aplicativos/riesgo)."""
+    """Catálogo de aplicativos gestionados por TI: los registrados a mano y las aplicaciones
+    empresariales que trae el conector (excluye el Shadow IT, que tiene su propia vista en
+    /api/aplicativos/riesgo)."""
     session = SessionLocal()
     try:
-        apps = session.query(Aplicativo).filter_by(origen="manual").all()
+        apps = (session.query(Aplicativo).filter(Aplicativo.origen.in_(["manual", "entra_id"]))
+                .order_by(Aplicativo.nombre).all())
         return jsonify([
             {
-                "id": a.id, "nombre": a.nombre,
+                "id": a.id, "nombre": a.nombre, "origen": a.origen,
                 "tipo_soporte_sso": a.tipo_soporte_sso,
                 "costo_licencia_mensual": a.costo_licencia_mensual,
             } for a in apps
@@ -349,15 +397,417 @@ def iniciar_offboarding(usuario_id):
         session.close()
 
 
+# --------------------------------------------------------------------------- conectores
+# Catálogo de integraciones que muestra el panel. Solo las "disponibles" se pueden configurar.
+CATALOGO_CONECTORES = [
+    {"tipo": "entra_id", "nombre": "Microsoft Entra ID", "disponible": True,
+     "descripcion": "Usuarios, aplicaciones empresariales, asignaciones y permisos OAuth (Shadow IT) "
+                    "de tu tenant de Microsoft 365."},
+    {"tipo": "google_workspace", "nombre": "Google Workspace", "disponible": False,
+     "descripcion": "Usuarios y aplicaciones con acceso OAuth a cuentas de Google."},
+    {"tipo": "keycloak", "nombre": "Keycloak", "disponible": False,
+     "descripcion": "Deshabilitar la cuenta en el SSO al ejecutar un offboarding (RF-08)."},
+]
+TIPOS_DISPONIBLES = {c["tipo"] for c in CATALOGO_CONECTORES if c["disponible"]}
+_bloqueo_sincronizacion = threading.Lock()
+
+
+def ejecutar_en_segundo_plano(funcion):
+    """La sincronización puede tardar más que el tiempo de espera del proxy: corre aparte y el
+    panel consulta el estado. Las pruebas reemplazan esta función para correrla en línea."""
+    threading.Thread(target=funcion, daemon=True).start()
+
+
+def _responsable():
+    return usuario_conectado() or "desconocido"
+
+
+def _registrar_evento(session, tipo, accion, detalle=None):
+    session.add(EventoConector(tipo=tipo, accion=accion, responsable=_responsable(), detalle=detalle))
+
+
+def _conector_a_json(definicion, conector):
+    datos = dict(definicion)
+    datos.update({"estado": "desconectado", "tenant_id": None, "client_id": None, "tiene_secreto": False,
+                  "nombre_tenant": None, "ultimo_error": None, "ultima_sincronizacion": None, "resumen": None})
+    if conector:
+        datos.update({
+            "estado": conector.estado,
+            "tenant_id": conector.tenant_id,
+            "client_id": conector.client_id,
+            "tiene_secreto": bool(conector.secreto_cifrado),
+            "nombre_tenant": conector.nombre_tenant,
+            "ultimo_error": conector.ultimo_error,
+            "ultima_sincronizacion": (conector.ultima_sincronizacion.isoformat()
+                                      if conector.ultima_sincronizacion else None),
+            "resumen": json.loads(conector.resumen) if conector.resumen else None,
+        })
+    return datos
+
+
+def _conector_disponible(session, tipo):
+    if tipo not in TIPOS_DISPONIBLES:
+        return None, (jsonify({"error": "Conector no disponible."}), 404)
+    return session.query(Conector).filter_by(tipo=tipo).first(), None
+
+
+@app.route("/api/conectores", methods=["GET"])
+def listar_conectores():
+    session = SessionLocal()
+    try:
+        guardados = {c.tipo: c for c in session.query(Conector).all()}
+        return jsonify([_conector_a_json(d, guardados.get(d["tipo"])) for d in CATALOGO_CONECTORES])
+    finally:
+        session.close()
+
+
+@app.route("/api/conectores/<tipo>", methods=["PUT"])
+def guardar_conector(tipo):
+    """Guarda las credenciales. El secreto puede omitirse para conservar el que ya está guardado."""
+    data = request.get_json(silent=True) or {}
+    # Los textos llegan recortados; cualquier otro tipo pasa tal cual para que la validación lo rechace.
+    tenant_id, client_id, secreto = (
+        (v.strip() or None) if isinstance(v, str) else v
+        for v in (data.get("tenant_id"), data.get("client_id"), data.get("client_secret"))
+    )
+
+    session = SessionLocal()
+    try:
+        conector, error = _conector_disponible(session, tipo)
+        if error:
+            return error
+        mensaje = conectores.validar_credenciales_entra(
+            tenant_id, client_id, secreto,
+            secreto_obligatorio=not (conector and conector.secreto_cifrado))
+        if mensaje:
+            return jsonify({"error": mensaje}), 400
+        if conector and conector.estado == "sincronizando":
+            return jsonify({"error": "Hay una sincronización en curso. Espera a que termine."}), 409
+        try:
+            secreto_cifrado = conectores.cifrar(secreto) if secreto else None
+        except conectores.ErrorConector as exc:
+            app.logger.exception("No se pudo cifrar el secreto de un conector")
+            return jsonify({"error": str(exc)}), 503
+
+        if not conector:
+            conector = Conector(tipo=tipo)
+            session.add(conector)
+        cambio_de_tenant = conector.tenant_id not in (None, tenant_id)
+        conector.tenant_id, conector.client_id = tenant_id, client_id
+        if secreto_cifrado:
+            conector.secreto_cifrado = secreto_cifrado
+        conector.estado, conector.ultimo_error = "pendiente", None
+        if cambio_de_tenant:
+            conector.nombre_tenant = None
+        conector.actualizado_por, conector.actualizado_en = _responsable(), datetime.now(timezone.utc)
+        _registrar_evento(session, tipo, "configurar",
+                          f"tenant {tenant_id}" + (" · secreto nuevo" if secreto_cifrado else ""))
+        session.commit()
+        definicion = next(d for d in CATALOGO_CONECTORES if d["tipo"] == tipo)
+        return jsonify(_conector_a_json(definicion, conector))
+    finally:
+        session.close()
+
+
+def _credenciales(conector):
+    if not conector or not conector.secreto_cifrado:
+        raise conectores.ErrorConector("El conector no está configurado.")
+    return conector.tenant_id, conector.client_id, conectores.descifrar(conector.secreto_cifrado)
+
+
+@app.route("/api/conectores/<tipo>/probar", methods=["POST"])
+def probar_conector(tipo):
+    session = SessionLocal()
+    try:
+        conector, error = _conector_disponible(session, tipo)
+        if error:
+            return error
+        if not conector or not conector.secreto_cifrado:
+            return jsonify({"error": "Primero guarda las credenciales del conector."}), 400
+        try:
+            nombre = conectores.probar_entra(*_credenciales(conector))
+        except conectores.ErrorConector as exc:
+            conector.estado, conector.ultimo_error = "error", str(exc)
+            _registrar_evento(session, tipo, "probar", "fallida")
+            session.commit()
+            return jsonify({"error": str(exc)}), 502
+        conector.estado, conector.ultimo_error, conector.nombre_tenant = "conectado", None, nombre
+        _registrar_evento(session, tipo, "probar", "correcta")
+        session.commit()
+        return jsonify({"ok": True, "nombre_tenant": nombre})
+    finally:
+        session.close()
+
+
+@app.route("/api/conectores/<tipo>/sincronizar", methods=["POST"])
+def sincronizar_conector(tipo):
+    session = SessionLocal()
+    try:
+        conector, error = _conector_disponible(session, tipo)
+        if error:
+            return error
+        if not conector or conector.estado not in ("conectado", "error") or not conector.secreto_cifrado:
+            return jsonify({"error": "Prueba la conexión antes de sincronizar."}), 400
+        if not _bloqueo_sincronizacion.acquire(blocking=False):
+            return jsonify({"error": "Ya hay una sincronización en curso."}), 409
+        conector.estado, conector.ultimo_error = "sincronizando", None
+        _registrar_evento(session, tipo, "sincronizar", "iniciada")
+        session.commit()
+        conector_id, responsable = conector.id, _responsable()
+    finally:
+        session.close()
+
+    def tarea():
+        try:
+            _sincronizar_entra(conector_id, responsable)
+        finally:
+            _bloqueo_sincronizacion.release()
+
+    ejecutar_en_segundo_plano(tarea)
+    return jsonify({"estado": "sincronizando"}), 202
+
+
+@app.route("/api/conectores/<tipo>", methods=["DELETE"])
+def desconectar_conector(tipo):
+    """Borra las credenciales y deja de sincronizar. Los usuarios, aplicativos, accesos y eventos
+    ya registrados se conservan: son la evidencia de auditoría (RNF-11)."""
+    session = SessionLocal()
+    try:
+        conector, error = _conector_disponible(session, tipo)
+        if error:
+            return error
+        if not conector or conector.estado == "desconectado":
+            return jsonify({"error": "El conector no está configurado."}), 404
+        if conector.estado == "sincronizando":
+            return jsonify({"error": "Hay una sincronización en curso. Espera a que termine."}), 409
+        conector.tenant_id = conector.client_id = conector.secreto_cifrado = None
+        conector.nombre_tenant = conector.ultimo_error = None
+        conector.estado = "desconectado"
+        conector.actualizado_por, conector.actualizado_en = _responsable(), datetime.now(timezone.utc)
+        _registrar_evento(session, tipo, "desconectar", "credenciales eliminadas; datos conservados")
+        session.commit()
+        return jsonify({"ok": True})
+    finally:
+        session.close()
+
+
+def _sincronizar_entra(conector_id, responsable):
+    session = SessionLocal()
+    try:
+        conector = session.get(Conector, conector_id)
+        try:
+            datos = conectores.extraer_entra(*_credenciales(conector))
+            resumen = aplicar_sincronizacion_entra(session, datos)
+        except conectores.ErrorConector as exc:
+            session.rollback()
+            conector = session.get(Conector, conector_id)
+            conector.estado, conector.ultimo_error = "error", str(exc)
+            session.add(EventoConector(tipo=conector.tipo, accion="sincronizar", responsable=responsable,
+                                       detalle="fallida"))
+            session.commit()
+            return
+        except Exception:  # noqa: BLE001 - cualquier fallo inesperado deja el conector en error
+            app.logger.exception("Fallo inesperado al sincronizar el conector %s", conector_id)
+            session.rollback()
+            conector = session.get(Conector, conector_id)
+            conector.estado = "error"
+            conector.ultimo_error = "La sincronización falló por un error interno. Revisa los registros del servidor."
+            session.commit()
+            return
+        conector.estado, conector.ultimo_error = "conectado", None
+        conector.ultima_sincronizacion = datetime.now(timezone.utc)
+        conector.resumen = json.dumps(resumen)
+        session.add(EventoConector(tipo=conector.tipo, accion="sincronizar", responsable=responsable,
+                                   detalle=json.dumps(resumen)))
+        session.commit()
+    finally:
+        session.close()
+
+
+def _recuperar_sincronizaciones_interrumpidas():
+    """Si el servidor se reinició a mitad de una sincronización, el conector no debe quedar
+    marcado como 'sincronizando' para siempre."""
+    session = SessionLocal()
+    try:
+        for conector in session.query(Conector).filter_by(estado="sincronizando").all():
+            conector.estado = "error"
+            conector.ultimo_error = "La sincronización se interrumpió por un reinicio del servidor. Vuelve a ejecutarla."
+        session.commit()
+    finally:
+        session.close()
+
+
+def _guardar_usuario(session, u):
+    usuario = (session.query(Usuario).filter_by(origen="entra_id", id_externo=u["id"]).first()
+               or session.query(Usuario).filter_by(correo=u["correo"]).first())
+    if not usuario:
+        usuario = Usuario(nombre=u["nombre"] or u["correo"], correo=u["correo"])
+        session.add(usuario)
+    usuario.nombre = u["nombre"] or u["correo"]
+    usuario.origen, usuario.id_externo = "entra_id", u["id"]
+    if usuario.estado != "offboarding":
+        usuario.estado = "activo" if u["activo"] else "inactivo"
+    session.flush()
+    return usuario
+
+
+def _sincronizar_usuarios(session, usuarios_entra):
+    """Crea o actualiza los usuarios. Devuelve {id en Entra: Usuario}."""
+    por_externo = {u["id"]: _guardar_usuario(session, u) for u in usuarios_entra if u["correo"]}
+
+    vistos = {usuario.id for usuario in por_externo.values()}
+    for usuario in session.query(Usuario).filter_by(origen="entra_id", estado="activo").all():
+        if usuario.id not in vistos:
+            usuario.estado = "inactivo"
+    return por_externo
+
+
+def _sincronizar_catalogo(session, aplicativos_entra):
+    """Aplicaciones empresariales del tenant. Devuelve {id del service principal: Aplicativo}."""
+    por_externo = {}
+    for a in aplicativos_entra:
+        aplicativo = session.query(Aplicativo).filter_by(origen="entra_id", id_externo=a["id"]).first()
+        if not aplicativo:
+            aplicativo = Aplicativo(origen="entra_id", id_externo=a["id"], costo_licencia_mensual=0)
+            session.add(aplicativo)
+        aplicativo.nombre, aplicativo.tipo_soporte_sso = a["nombre"], a["sso"]
+        session.flush()
+        por_externo[a["id"]] = aplicativo
+    return por_externo
+
+
+def _sincronizar_shadow_it(session, concesiones):
+    """Una fila por aplicación con permisos OAuth, con la unión de los alcances concedidos.
+    Devuelve {id del service principal: Aplicativo}."""
+    alcances = {}
+    for c in concesiones:
+        alcances.setdefault(c["aplicativo_id"], {"nombre": c["nombre"], "alcances": set()})
+        alcances[c["aplicativo_id"]]["alcances"].update(c["alcance"].split())
+
+    por_externo = {}
+    for externo, info in alcances.items():
+        aplicativo = (session.query(Aplicativo).filter_by(origen="oauth_discovery", id_externo=externo).first()
+                      or session.query(Aplicativo).filter_by(origen="oauth_discovery", nombre=info["nombre"],
+                                                             id_externo=None).first())
+        if not aplicativo:
+            aplicativo = Aplicativo(origen="oauth_discovery", tipo_soporte_sso="ninguno", costo_licencia_mensual=0)
+            session.add(aplicativo)
+        alcance = " ".join(sorted(info["alcances"]))
+        aplicativo.nombre, aplicativo.id_externo, aplicativo.alcance_oauth = info["nombre"], externo, alcance
+        aplicativo.puntaje_riesgo = calcular_puntaje_riesgo(alcance, aplicativo.fecha_ultimo_uso)
+        session.flush()
+        por_externo[externo] = aplicativo
+    return por_externo
+
+
+def _sincronizar_accesos(session, datos, usuarios, catalogo, shadow):
+    """Deja vigentes exactamente los accesos que hay en Entra ID. Los que sobran se revocan con
+    fecha, nunca se borran. Devuelve (nuevos, revocados)."""
+    deseados = {
+        (usuarios[a["usuario_id"]].id, catalogo[a["aplicativo_id"]].id)
+        for a in datos["asignaciones"]
+        if a["usuario_id"] in usuarios and a["aplicativo_id"] in catalogo
+    } | {
+        (usuarios[c["usuario_id"]].id, shadow[c["aplicativo_id"]].id)
+        for c in datos["concesiones"]
+        if c["usuario_id"] in usuarios
+    }
+
+    vigentes = {(a.usuario_id, a.aplicativo_id): a
+                for a in session.query(Acceso).filter_by(origen="entra_id", fecha_revocado=None).all()}
+    ahora = datetime.now(timezone.utc)
+    revocados = [acceso for clave, acceso in vigentes.items() if clave not in deseados]
+    for acceso in revocados:
+        acceso.fecha_revocado = ahora
+    nuevos = deseados - set(vigentes)
+    for usuario_id, aplicativo_id in nuevos:
+        session.add(Acceso(usuario_id=usuario_id, aplicativo_id=aplicativo_id, origen="entra_id"))
+    return len(nuevos), len(revocados)
+
+
+def aplicar_sincronizacion_entra(session, datos):
+    """Refleja en el inventario lo que hay en Entra ID. No borra nada: los accesos que ya no
+    existen allá se marcan como revocados y los usuarios que desaparecieron, como inactivos."""
+    usuarios = _sincronizar_usuarios(session, datos["usuarios"])
+    catalogo = _sincronizar_catalogo(session, datos["aplicativos"])
+    shadow = _sincronizar_shadow_it(session, datos["concesiones"])
+    nuevos, revocados = _sincronizar_accesos(session, datos, usuarios, catalogo, shadow)
+    session.commit()
+    return {"usuarios": len(usuarios), "aplicativos": len(catalogo), "shadow_it": len(shadow),
+            "accesos_nuevos": nuevos, "accesos_revocados": revocados}
+
+
+# Columnas agregadas después de que la base de producción ya existía. create_all() crea tablas
+# nuevas pero no altera las existentes, así que se agregan aquí si faltan. Nombres y tipos son
+# constantes del código, nunca entrada del usuario.
+COLUMNAS_NUEVAS = {
+    "aplicativos": {"id_externo": "VARCHAR"},
+    "usuarios": {"origen": "VARCHAR NOT NULL DEFAULT 'manual'", "id_externo": "VARCHAR"},
+    "accesos": {"origen": "VARCHAR NOT NULL DEFAULT 'manual'"},
+}
+
+
+def _migrar_columnas():
+    inspector = inspect(engine)
+    with engine.begin() as conexion:
+        for tabla, columnas in COLUMNAS_NUEVAS.items():
+            existentes = {c["name"] for c in inspector.get_columns(tabla)}
+            for nombre, tipo in columnas.items():
+                if nombre not in existentes:
+                    conexion.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}"))
+
+
 def init_db():
     Base.metadata.create_all(engine)
+    _migrar_columnas()
+
+
+# Lo que sembraba sembrar_datos_ejemplo() en versiones anteriores, para retirarlo de las bases
+# que ya lo tienen. Solo coincide con esos registros exactos.
+DOMINIO_EJEMPLO = "@empresa-ejemplo.com"
+APLICATIVOS_EJEMPLO = {
+    "manual": ["Slack", "Sistema de Facturación Legacy", "CRM Interno"],
+    "oauth_discovery": ["Canva (conectado por Marketing)", "Notion (conectado por Ventas)",
+                        "App desconocida (token huérfano)"],
+}
+
+
+def purgar_datos_ejemplo():
+    """Quita los datos ilustrativos de versiones anteriores. Sus accesos y eventos de offboarding
+    también son ficticios, así que se van con ellos; nada que provenga de un conector o que se
+    haya registrado a mano con otros datos se toca."""
+    session = SessionLocal()
+    try:
+        usuarios = session.query(Usuario).filter(Usuario.correo.like(f"%{DOMINIO_EJEMPLO}")).all()
+        ids_usuarios = [u.id for u in usuarios]
+        aplicativos = [
+            a for origen, nombres in APLICATIVOS_EJEMPLO.items()
+            for a in session.query(Aplicativo).filter(Aplicativo.origen == origen,
+                                                      Aplicativo.nombre.in_(nombres),
+                                                      Aplicativo.id_externo.is_(None)).all()
+        ]
+        ids_aplicativos = [a.id for a in aplicativos]
+        if not ids_usuarios and not ids_aplicativos:
+            return 0
+        session.query(EventoOffboarding).filter(EventoOffboarding.usuario_id.in_(ids_usuarios)).delete(
+            synchronize_session=False)
+        session.query(Acceso).filter(
+            Acceso.usuario_id.in_(ids_usuarios) | Acceso.aplicativo_id.in_(ids_aplicativos)
+        ).delete(synchronize_session=False)
+        for registro in usuarios + aplicativos:
+            session.delete(registro)
+        session.commit()
+        app.logger.info("Datos de ejemplo retirados: %s usuarios, %s aplicativos",
+                        len(ids_usuarios), len(ids_aplicativos))
+        return len(ids_usuarios) + len(ids_aplicativos)
+    finally:
+        session.close()
 
 
 def sembrar_datos_ejemplo():
     """
-    Datos de ejemplo puramente ilustrativos para poder ver el panel funcionando de inmediato.
-    NO son datos reales de ninguna empresa -- deben reemplazarse por el catálogo real una vez
-    el equipo complete el diagnóstico de docs/INVESTIGACION_PENDIENTE.md.
+    Datos ilustrativos para desarrollo y pruebas (SEMBRAR_DATOS_EJEMPLO=1). En despliegue no se
+    usan: el inventario se llena con los conectores.
     """
     session = SessionLocal()
     try:
@@ -405,9 +855,17 @@ def sembrar_datos_ejemplo():
 
 
 
-if __name__ == "__main__":
+def preparar_base():
     init_db()
-    sembrar_datos_ejemplo()
+    if os.environ.get("SEMBRAR_DATOS_EJEMPLO") == "1":
+        sembrar_datos_ejemplo()
+    else:
+        purgar_datos_ejemplo()
+    _recuperar_sincronizaciones_interrumpidas()
+
+
+if __name__ == "__main__":
+    preparar_base()
     port = int(os.environ.get("PORT", 5000))
     host = os.environ.get("HOST", "127.0.0.1")
     app.run(host=host, port=port, debug=os.environ.get("FLASK_DEBUG", "0") == "1")
