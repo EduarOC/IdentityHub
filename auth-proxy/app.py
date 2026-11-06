@@ -91,6 +91,29 @@ except Exception:
         client_kwargs={"scope": "openid email profile"},
     )
 
+# Cabeceras de seguridad HTTP (hallazgos de OWASP ZAP, ASVS V14.4). Se agregan a toda respuesta
+# que sale del proxy, salvo que el aplicativo protegido ya envíe la suya: así el inventario puede
+# fijar una CSP a la medida del panel y un legacy que no sabe de cabeceras queda cubierto igual.
+CABECERAS_SEGURIDAD = {
+    "Content-Security-Policy": "default-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    # Conserva el origen en el Referer de las peticiones propias (lo usa _mismo_origen como respaldo).
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+}
+
+
+@app.after_request
+def agregar_cabeceras_de_seguridad(response):
+    for nombre, valor in CABECERAS_SEGURIDAD.items():
+        response.headers.setdefault(nombre, valor)
+    # HSTS solo cuando el proxy está publicado por HTTPS (misma condición que la cookie Secure).
+    if app.config["SESSION_COOKIE_SECURE"]:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
 HEADERS_NO_REENVIABLES = {"host", "cookie", "content-length", "accept-encoding"}
 HEADERS_NO_DEVOLVER = {"content-encoding", "content-length", "transfer-encoding", "connection"}
 

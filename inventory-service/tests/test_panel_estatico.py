@@ -67,3 +67,11 @@ def test_panel_tiene_integraciones_con_formulario_accesible():
 def test_panel_usa_la_api_de_conectores():
     for ruta in ("/api/conectores", "/probar", "/sincronizar"):
         assert ruta in JS
+
+
+def test_panel_cumple_una_csp_estricta():
+    # La CSP del inventario no permite scripts ni estilos en línea: el HTML no debe tenerlos.
+    assert "<script>" not in HTML
+    assert not re.search(r"<script(?![^>]*\bsrc=)", HTML)
+    assert " style=" not in HTML
+    assert " onclick=" not in HTML
