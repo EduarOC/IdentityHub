@@ -135,7 +135,7 @@
                     <summary>Cómo obtener estos datos (5 minutos, requiere un administrador de Entra ID)</summary>
                     <ol>
                         <li>En el <strong>Microsoft Entra admin center</strong>, ve a <em>Applications → App registrations → New registration</em> y créala con el nombre «IdentityHub».</li>
-                        <li>En <em>API permissions</em>, agrega <em>Microsoft Graph → Application permissions → Directory.Read.All</em> y pulsa <em>Grant admin consent</em>.</li>
+                        <li>En <em>API permissions</em>, agrega <em>Microsoft Graph → Application permissions</em> → <strong>User.Read.All</strong>, <strong>Application.Read.All</strong> y <strong>DelegatedPermissionGrant.Read.All</strong>, y pulsa <em>Grant admin consent</em>. Son de solo lectura.</li>
                         <li>En <em>Certificates &amp; secrets</em>, crea un <em>client secret</em> y copia su <strong>Value</strong> (solo se muestra una vez).</li>
                         <li>En <em>Overview</em>, copia el <strong>Directory (tenant) ID</strong> y el <strong>Application (client) ID</strong>.</li>
                     </ol>

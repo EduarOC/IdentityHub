@@ -18,9 +18,9 @@ REQUISITOS PREVIOS (una sola vez, los hace un administrador real de Entra ID de 
    Copiar el VALOR del secreto inmediatamente -- no se vuelve a mostrar después.
 
 3. API permissions -> Add a permission -> Microsoft Graph -> Application permissions
-   -> agregar: Directory.Read.All
-   (permite leer oauth2PermissionGrants y servicePrincipals de todo el tenant; es de solo
-   lectura, no puede modificar nada).
+   -> agregar: DelegatedPermissionGrant.Read.All y Application.Read.All
+   (permiten leer oauth2PermissionGrants y servicePrincipals; son de solo lectura y no pueden
+   modificar nada. No hace falta Directory.Read.All, que lee todo el directorio).
 
 4. Clic en "Grant admin consent for [nombre del tenant]". Este paso requiere el rol de
    Administrador Global o Administrador de Aplicaciones en Entra ID -- sin él, las consultas

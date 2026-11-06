@@ -22,13 +22,27 @@ aplicaciones*. Tarda unos 5 minutos.
    - Tipo de cuenta: *Accounts in this organizational directory only*.
    - Sin URL de redirección.
 2. En **API permissions**, ve a **Add a permission → Microsoft Graph → Application permissions**,
-   agrega **`Directory.Read.All`** y pulsa **Grant admin consent for …**.
+   agrega estos tres permisos y pulsa **Grant admin consent for …**:
+
+   | Permiso | Para qué lo usa IdentityHub |
+   |---|---|
+   | `User.Read.All` | Leer los usuarios y si su cuenta está habilitada |
+   | `Application.Read.All` | Leer las aplicaciones empresariales y a quién están asignadas |
+   | `DelegatedPermissionGrant.Read.All` | Leer los permisos OAuth concedidos (Shadow IT) |
+
+   Si ya aparece `User.Read` (delegado), puedes quitarlo: el conector no lo usa.
 3. En **Certificates & secrets**, ve a **New client secret**, elige una vigencia (máximo 24 meses)
    y copia el **Value**. Solo se muestra una vez.
 4. En **Overview**, copia el **Directory (tenant) ID** y el **Application (client) ID**.
 
-`Directory.Read.All` es de solo lectura: IdentityHub no puede crear, cambiar ni borrar nada en
-el tenant.
+Los tres son de solo lectura: IdentityHub no puede crear, cambiar ni borrar nada en el tenant.
+Son los mínimos para lo que consulta. No se pide `Directory.Read.All`, que además leería grupos,
+dispositivos, roles y el resto del directorio. Si el tenant ya se conectó con `Directory.Read.All`,
+el conector sigue funcionando; para reducir el alcance, agrega los tres permisos, vuelve a
+conceder el consentimiento y quita `Directory.Read.All`.
+
+Sin `Organization.Read.All`, la tarjeta muestra el ID del tenant en lugar de su nombre. Es
+opcional y no hace falta para nada más.
 
 ### 2. Conectar desde el panel
 
@@ -80,7 +94,7 @@ Después, usa **Sincronizar ahora** cada vez que quieras actualizar el inventari
 | Mensaje en la tarjeta | Qué hacer |
 |---|---|
 | *Microsoft rechazó las credenciales* | Revisa el Tenant ID y el Client ID. Comprueba que pegaste el **Value** del secreto (no el *Secret ID*) y que no haya expirado. |
-| *Faltan permisos: … Directory.Read.All* | Falta el permiso o el **Grant admin consent** (paso 2 del registro). |
+| *Faltan permisos: la app necesita el permiso de aplicación …* | Falta el permiso que nombra el mensaje, o el **Grant admin consent** (paso 2 del registro). La prueba de conexión revisa los tres permisos uno por uno. |
 | *La sincronización se interrumpió por un reinicio del servidor* | Render reinició el servicio a mitad de la sincronización. Pulsa **Sincronizar ahora**. |
 | *No se pudo leer el secreto guardado* | Cambió `CONECTORES_CLAVE`. Vuelve a ingresar el secreto en **Configurar**. |
 

@@ -258,12 +258,12 @@ def test_sincronizar_no_toca_accesos_registrados_a_mano(client, con_datos):
 
 def test_sincronizacion_con_error_de_microsoft_deja_el_mensaje(client, inv):
     _conectar(client, inv)
-    error = inv.conectores.ErrorConector("Faltan permisos: Directory.Read.All")
+    error = inv.conectores.ErrorConector("Faltan permisos: User.Read.All")
     with patch.object(inv.conectores, "extraer_entra", side_effect=error):
         client.post("/api/conectores/entra_id/sincronizar")
     entra = _entra_id(client)
     assert entra["estado"] == "error"
-    assert entra["ultimo_error"] == "Faltan permisos: Directory.Read.All"
+    assert entra["ultimo_error"] == "Faltan permisos: User.Read.All"
     with inv.SessionLocal() as s:
         assert s.query(inv.Usuario).count() == 0
 

@@ -61,8 +61,11 @@ def test_token_sin_red():
 
 def test_get_sin_permisos_y_con_error():
     with patch.object(mod.requests, "get", return_value=_resp(status=403)):
-        with pytest.raises(mod.ErrorConector, match="Directory.Read.All"):
+        with pytest.raises(mod.ErrorConector, match="User.Read.All, Application.Read.All"):
             mod._get("tok", "https://graph")
+    with patch.object(mod.requests, "get", return_value=_resp(status=403)):
+        with pytest.raises(mod.ErrorConector, match="DelegatedPermissionGrant.Read.All con"):
+            mod._get("tok", "https://graph", permiso=mod.PERMISO_CONCESIONES)
     with patch.object(mod.requests, "get", return_value=_resp(status=503)):
         with pytest.raises(mod.ErrorConector, match="503"):
             mod._get("tok", "https://graph")
@@ -78,12 +81,29 @@ def test_paginacion_sigue_next_link():
     assert m.call_args.args[0] == "https://graph/p2"
 
 
-def test_probar_devuelve_el_nombre_del_tenant():
+def test_probar_comprueba_cada_permiso_y_devuelve_el_nombre_del_tenant():
     with patch.object(mod.requests, "post", return_value=_resp({"access_token": "tok"})), \
-         patch.object(mod.requests, "get", return_value=_resp({"value": [{"displayName": "Contoso"}]})):
+         patch.object(mod.requests, "get", return_value=_resp({"value": [{"displayName": "Contoso"}]})) as m:
         assert mod.probar_entra(T, C, "s") == "Contoso"
+    rutas = [c.args[0].replace(mod.GRAPH, "") for c in m.call_args_list]
+    assert rutas == ["/users", "/servicePrincipals", "/oauth2PermissionGrants", "/organization"]
+
+
+@pytest.mark.parametrize("posicion, permiso", [(0, "User.Read.All"), (1, "Application.Read.All"),
+                                               (2, "DelegatedPermissionGrant.Read.All")])
+def test_probar_dice_que_permiso_falta(posicion, permiso):
+    respuestas = [_resp({"value": []})] * posicion + [_resp(status=403)]
     with patch.object(mod.requests, "post", return_value=_resp({"access_token": "tok"})), \
-         patch.object(mod.requests, "get", return_value=_resp({"value": []})):
+         patch.object(mod.requests, "get", side_effect=respuestas):
+        with pytest.raises(mod.ErrorConector, match=f"permiso de aplicación {permiso} con"):
+            mod.probar_entra(T, C, "s")
+
+
+def test_probar_sin_permiso_de_organizacion_usa_el_id_del_tenant():
+    # Los datos de la organización no están entre los permisos mínimos: se muestra el ID.
+    respuestas = [_resp({"value": []})] * 3 + [_resp(status=403)]
+    with patch.object(mod.requests, "post", return_value=_resp({"access_token": "tok"})), \
+         patch.object(mod.requests, "get", side_effect=respuestas):
         assert mod.probar_entra(T, C, "s") == T
 
 
