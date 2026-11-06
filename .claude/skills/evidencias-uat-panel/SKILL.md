@@ -30,9 +30,11 @@ Credenciales por variables de entorno, nunca en el código ni en el comando visi
 ```bash
 export UAT_USUARIO=ana.torres
 export UAT_CLAVE='…'                      # contraseña del usuario de prueba
-python .claude/skills/evidencias-uat-panel/scripts/uat.py --entorno local    # proxy :9000, inventario :5000 (docker compose up -d)
+python .claude/skills/evidencias-uat-panel/scripts/uat.py --entorno local    # proxy :9000, panel por inventory-proxy :9100 (docker compose up -d)
 python .claude/skills/evidencias-uat-panel/scripts/uat.py --entorno render   # URLs públicas de Render
 ```
+
+El panel (CP-U06, CP-U07, CP-U09, CP-U10) también pide iniciar sesión: el usuario de prueba necesita el rol `admin-ti` en Keycloak.
 
 Opciones útiles: `--casos CP-U01,CP-U06`, `--salida <carpeta>`. En Render el plan gratuito tarda hasta un minuto en despertar: el script espera, pero conviene abrir las URL antes.
 

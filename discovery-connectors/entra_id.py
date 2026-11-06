@@ -124,8 +124,18 @@ def descubrir_apps(token=None):
     return apps
 
 
+def _credenciales_inventario():
+    """El inventario exige la cuenta de servicio cuando corre en despliegue. Sin contraseña
+    configurada (desarrollo local) se llama sin autenticación."""
+    clave = os.environ.get("INVENTORY_SERVICE_PASSWORD")
+    if not clave:
+        return None
+    return (os.environ.get("INVENTORY_SERVICE_USER", "service-account"), clave)
+
+
 def importar_al_inventario(apps):
-    resp = requests.post(f"{INVENTORY_URL}/api/discovery/importar", json={"apps": apps}, timeout=15)
+    resp = requests.post(f"{INVENTORY_URL}/api/discovery/importar", json={"apps": apps},
+                         auth=_credenciales_inventario(), timeout=15)
     resp.raise_for_status()
     return resp.json()
 

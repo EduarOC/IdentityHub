@@ -108,7 +108,8 @@ async function ejecutarOffboarding(usuarioId, nombre, boton) {
         const data = await pedirJSON(`/api/usuarios/${encodeURIComponent(usuarioId)}/offboarding`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ responsable: "Admin (panel de prueba)" }),
+            // El responsable lo pone el servidor con el usuario que inició sesión en el proxy.
+            body: JSON.stringify({}),
         });
         if (!data.success) throw new Error(data.error || "respuesta sin éxito");
         const lista = data.aplicativos_revocados.length > 0 ? data.aplicativos_revocados.join(", ") : "ningún acceso activo";
@@ -304,11 +305,22 @@ function prepararDetalle() {
     dialogo.addEventListener("close", () => { usuarioEnDetalle = null; });
 }
 
+// ------------------------------------------------------------------ sesión
+async function cargarSesion() {
+    // Detrás del proxy el servidor sabe quién inició sesión; en desarrollo devuelve null
+    // y la barra no muestra el bloque de sesión.
+    const { usuario } = await pedirJSON("/api/sesion");
+    if (!usuario) return;
+    document.getElementById("sesion-usuario").textContent = usuario;
+    document.getElementById("sesion").hidden = false;
+}
+
 async function cargarTodo() {
     await Promise.all([cargarUsuarios(), cargarAplicativos(), cargarShadowIT()]);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
     prepararDetalle();
+    cargarSesion().catch(error => console.error("No se pudo leer la sesión:", error));
     cargarTodo().catch(() => mostrarToast("No se pudo cargar el panel. Recarga la página.", "error"));
 });

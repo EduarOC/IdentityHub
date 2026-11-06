@@ -106,3 +106,86 @@ def test_detras_de_https_la_url_de_retorno_es_https(proxy, client):
                       return_value=redirect("http://keycloak.test/auth")) as m:
         client.get("/login", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "identityhub-auth-proxy.onrender.com"})
     assert m.call_args.args[0] == "https://identityhub-auth-proxy.onrender.com/auth/callback"
+
+
+# ---------------------------------------------------------------- rol obligatorio, CSRF y cierre de sesión
+import base64
+import json
+
+
+def _access_token(roles=(), roles_cliente=None):
+    carga = {"realm_access": {"roles": list(roles)}}
+    if roles_cliente:
+        carga["resource_access"] = {"auth-proxy": {"roles": list(roles_cliente)}}
+    cuerpo = base64.urlsafe_b64encode(json.dumps(carga).encode()).decode().rstrip("=")
+    return f"cabecera.{cuerpo}.firma"
+
+
+def test_rol_requerido_rechaza_usuario_sin_el_rol(proxy, client, monkeypatch):
+    monkeypatch.setattr(proxy, "ROL_REQUERIDO", "admin-ti")
+    token = {"access_token": _access_token(["empleado"]), "id_token": "idt",
+             "userinfo": {"email": "ana@empresa.com", "name": "Ana"}}
+    with patch.object(proxy.oauth.keycloak, "authorize_access_token", return_value=token):
+        r = client.get("/auth/callback")
+    assert r.status_code == 403
+    with client.session_transaction() as s:
+        assert "usuario" not in s
+        assert s["id_token"] == "idt"
+    assert client.get("/facturas").status_code == 302  # sigue sin poder pasar
+
+
+def test_rol_requerido_acepta_rol_de_realm_o_de_cliente(proxy, client, monkeypatch):
+    monkeypatch.setattr(proxy, "ROL_REQUERIDO", "admin-ti")
+    for token in ({"access_token": _access_token(["admin-ti"])},
+                  {"access_token": _access_token(roles_cliente=["admin-ti"])}):
+        with patch.object(proxy.oauth.keycloak, "authorize_access_token", return_value=token):
+            r = client.get("/auth/callback")
+        assert r.status_code == 302
+        with client.session_transaction() as s:
+            assert "usuario" in s
+
+
+def test_rol_requerido_con_token_ilegible_rechaza(proxy, client, monkeypatch):
+    monkeypatch.setattr(proxy, "ROL_REQUERIDO", "admin-ti")
+    with patch.object(proxy.oauth.keycloak, "authorize_access_token", return_value={"access_token": "no-es-jwt"}):
+        assert client.get("/auth/callback").status_code == 403
+
+
+def test_cookie_de_sesion_es_samesite_lax(proxy):
+    assert proxy.app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+    assert proxy.app.config["SESSION_COOKIE_HTTPONLY"] is True
+
+
+def test_post_desde_otro_sitio_se_rechaza(proxy, sesion_iniciada):
+    with patch.object(proxy.requests, "request", return_value=_respuesta_backend()) as m:
+        r = sesion_iniciada.post("/api/usuarios/1/offboarding", headers={"Origin": "https://sitio-malicioso.example"})
+    assert r.status_code == 403
+    m.assert_not_called()
+
+
+def test_post_desde_el_mismo_sitio_pasa(proxy, sesion_iniciada):
+    with patch.object(proxy.requests, "request", return_value=_respuesta_backend()) as m:
+        r = sesion_iniciada.post("/api/usuarios/1/offboarding", headers={"Origin": "http://localhost"})
+    assert r.status_code == 200
+    m.assert_called_once()
+
+
+def test_post_con_referer_ajeno_y_sin_origin_se_rechaza(proxy, sesion_iniciada):
+    with patch.object(proxy.requests, "request", return_value=_respuesta_backend()):
+        r = sesion_iniciada.post("/api/x", headers={"Referer": "https://otro.example/pagina"})
+    assert r.status_code == 403
+
+
+def test_logout_cierra_tambien_la_sesion_de_keycloak(proxy, client, monkeypatch):
+    monkeypatch.setattr(proxy, "FIN_SESION_URL", "https://keycloak.test/realms/identityhub/protocol/openid-connect/logout")
+    with client.session_transaction() as s:
+        s["usuario"] = {"email": "a@b.co", "nombre": "A"}
+        s["id_token"] = "token-id"
+    r = client.get("/logout")
+    destino = r.headers["Location"]
+    assert destino.startswith("https://keycloak.test/realms/identityhub/protocol/openid-connect/logout?")
+    assert "id_token_hint=token-id" in destino
+    assert "client_id=auth-proxy" in destino
+    assert "post_logout_redirect_uri=http%3A%2F%2Flocalhost%2Flogin" in destino
+    with client.session_transaction() as s:
+        assert "usuario" not in s
