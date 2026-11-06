@@ -104,8 +104,8 @@ def test_detras_de_https_la_url_de_retorno_es_https(proxy, client):
     # con http:// y Keycloak la rechazaría por no coincidir con la registrada.
     with patch.object(proxy.oauth.keycloak, "authorize_redirect",
                       return_value=redirect("http://keycloak.test/auth")) as m:
-        client.get("/login", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "identityhub-auth-proxy.onrender.com"})
-    assert m.call_args.args[0] == "https://identityhub-auth-proxy.onrender.com/auth/callback"
+        client.get("/login", headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "identityhub-gateway.onrender.com"})
+    assert m.call_args.args[0] == "https://identityhub-gateway.onrender.com/auth/callback"
 
 
 # ---------------------------------------------------------------- rol obligatorio, CSRF y cierre de sesión

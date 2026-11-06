@@ -24,6 +24,9 @@ services:
     environment:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Falta KEYCLOAK_ADMIN_PASSWORD en .env (copiar .env.example)}
+      # El realm las lee al importarse: secret del cliente auth-proxy y clave de ana.torres.
+      PROXY_CLIENT_SECRET: ${PROXY_CLIENT_SECRET:?Falta PROXY_CLIENT_SECRET en .env (copiar .env.example)}
+      UAT_USER_PASSWORD: ${UAT_USER_PASSWORD:?Falta UAT_USER_PASSWORD en .env (copiar .env.example)}
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/identityhub
       KC_DB_USERNAME: identityhub
@@ -37,7 +40,7 @@ services:
       JAVA_OPTS_APPEND: "-Xms128m -Xmx250m -XX:MaxMetaspaceSize=150m"
     volumes:
       # --import-realm carga automáticamente el realm, el cliente del auth-proxy y un usuario
-      # de prueba (ana.torres / identityhub123) al arrancar. Nada que configurar a mano para
+      # de prueba (ana.torres, con la clave UAT_USER_PASSWORD de .env) al arrancar. Nada que configurar a mano para
       # probar el flujo de login por primera vez.
       - ./keycloak-realm:/opt/keycloak/data/import
     ports:
@@ -57,7 +60,10 @@ services:
       # Con esta clave definida, el inventario solo responde a inventory-proxy (cuenta de servicio).
       BACKEND_SERVICE_USER: svc-inventario
       BACKEND_SERVICE_PASSWORD: ${INVENTORY_SERVICE_PASSWORD:?Falta INVENTORY_SERVICE_PASSWORD en .env (copiar .env.example)}
-    # Sin puerto publicado: el panel se abre por inventory-proxy en http://localhost:9100.
+    # El panel se abre por inventory-proxy en http://localhost:9100. El puerto 5000 queda solo
+    # en esta máquina para el conector de Entra ID, que entra con la cuenta de servicio.
+    ports:
+      - "127.0.0.1:5000:5000"
     depends_on:
       postgres:
         condition: service_healthy

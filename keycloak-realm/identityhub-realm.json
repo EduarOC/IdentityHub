@@ -16,23 +16,23 @@
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
-      "secret": "auth-proxy-dev-secret-cambiar-en-produccion",
+      "secret": "${PROXY_CLIENT_SECRET}",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "redirectUris": [
         "http://localhost:9000/auth/callback",
         "http://localhost:9100/auth/callback",
-        "https://identityhub-auth-proxy.onrender.com/auth/callback",
-        "https://identityhub-inventory-proxy.onrender.com/auth/callback"
+        "https://identityhub-gateway.onrender.com/auth/callback",
+        "https://identityhub-panel.onrender.com/auth/callback"
       ],
       "webOrigins": [
         "http://localhost:9000",
         "http://localhost:9100",
-        "https://identityhub-auth-proxy.onrender.com",
-        "https://identityhub-inventory-proxy.onrender.com"
+        "https://identityhub-gateway.onrender.com",
+        "https://identityhub-panel.onrender.com"
       ],
       "attributes": {
-        "post.logout.redirect.uris": "http://localhost:9000/login##http://localhost:9100/login##https://identityhub-auth-proxy.onrender.com/login##https://identityhub-inventory-proxy.onrender.com/login"
+        "post.logout.redirect.uris": "http://localhost:9000/login##http://localhost:9100/login##https://identityhub-gateway.onrender.com/login##https://identityhub-panel.onrender.com/login"
       }
     }
   ],
@@ -47,7 +47,7 @@
       "credentials": [
         {
           "type": "password",
-          "value": "identityhub123",
+          "value": "${UAT_USER_PASSWORD}",
           "temporary": false
         }
       ],

@@ -98,8 +98,8 @@ repositorio. Si falta alguna, Docker Compose se detiene e indica cuál.
 
 | Servicio | URL | Credenciales de prueba |
 |---|---|---|
-| Panel de administración (inventario) | http://localhost:5000 | — |
-| Auth proxy → aplicativo legacy | http://localhost:9000 | `ana.torres` / `identityhub123` |
+| Panel de administración (inventario) | http://localhost:9100 | `ana.torres` / `identityhub123` (rol `admin-ti`) |
+| Auth proxy → aplicativo legacy | http://localhost:9000 | `ana.torres` / `identityhub123` (`UAT_USER_PASSWORD` en `.env`) |
 | Consola de Keycloak | http://localhost:8080 | las de `KEYCLOAK_ADMIN_PASSWORD` en `.env` |
 
 Al abrir `http://localhost:9000`, el proxy redirige al login de Keycloak; tras iniciar sesión se

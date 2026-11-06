@@ -219,7 +219,7 @@ Blueprint para imágenes externas:
    revisar la documentación oficial de Keycloak sobre el modo `start`).
 5. Plan: Free.
 
-El servicio de inventario (`identityhub-inventory` en `render.yaml`) sí se puede desplegar
+El servicio de inventario (`identityhub-inventario` en `render.yaml`) sí se puede desplegar
 directamente como Blueprint, igual que en el proyecto anterior.
 
 ### Si 512 MB no alcanza
