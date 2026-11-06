@@ -6,6 +6,11 @@ const formatoMoneda = new Intl.NumberFormat("es-CO", { style: "currency", curren
 const formatoFecha = { year: "numeric", month: "short", day: "numeric" };
 const NIVEL_RIESGO = { alto: "Riesgo alto", medio: "Riesgo medio", bajo: "Riesgo bajo" };
 
+// Catálogo y Shadow IT indexados por id, para enriquecer el detalle de cada usuario.
+const catalogo = new Map();
+const shadowIT = new Map();
+let usuarioEnDetalle = null;
+
 function el(etiqueta, opciones = {}, hijos = []) {
     const nodo = document.createElement(etiqueta);
     if (opciones.clase) nodo.className = opciones.clase;
@@ -78,8 +83,15 @@ function filaUsuario(u) {
     if (retirado) boton.disabled = true;
     else boton.addEventListener("click", () => ejecutarOffboarding(u.id, u.nombre, boton));
 
+    const enlace = el("button", {
+        clase: "link-usuario",
+        texto: u.nombre,
+        atributos: { type: "button", "aria-haspopup": "dialog", "aria-label": `Ver aplicativos de ${u.nombre}` },
+    });
+    enlace.addEventListener("click", () => abrirDetalle(u));
+
     return el("tr", {}, [
-        celda(u.nombre, "col-nombre"),
+        el("td", { clase: "col-nombre" }, [enlace]),
         celda(u.correo, "col-correo"),
         el("td", { clase: "col-estado" }, [el("span", { clase: `badge ${retirado ? "badge-offboarding" : "badge-activo"}`, texto: retirado ? "Offboarding" : "Activo" })]),
         el("td", { clase: "num col-accesos", texto: String(u.accesos_activos), atributos: { "data-etiqueta": "Accesos activos" } }),
@@ -102,6 +114,7 @@ async function ejecutarOffboarding(usuarioId, nombre, boton) {
         const lista = data.aplicativos_revocados.length > 0 ? data.aplicativos_revocados.join(", ") : "ningún acceso activo";
         mostrarToast(`Offboarding de ${nombre} completado. Revocado: ${lista}`);
         await cargarUsuarios();
+        await refrescarDetalle(usuarioId);
     } catch (error) {
         console.error("Offboarding fallido:", error);
         boton.disabled = false;
@@ -121,6 +134,8 @@ async function cargarAplicativos() {
         return;
     }
 
+    catalogo.clear();
+    apps.forEach(a => catalogo.set(a.id, a));
     if (apps.length === 0) {
         filaMensaje(tbody, 3, "Todavía no hay aplicativos en el catálogo.");
     } else {
@@ -147,6 +162,8 @@ async function cargarShadowIT() {
         return;
     }
 
+    shadowIT.clear();
+    apps.forEach(a => shadowIT.set(a.id, a));
     if (apps.length === 0) {
         grid.replaceChildren(el("p", { clase: "estado-vacio", texto: "No se ha importado ningún hallazgo de Shadow IT todavía." }));
     } else {
@@ -176,10 +193,122 @@ function tarjetaShadowIT(a) {
     ]);
 }
 
+// ------------------------------------------------------------------ detalle de un usuario
+function fecha(iso) {
+    return iso ? new Date(iso).toLocaleDateString("es-CO", formatoFecha) : "—";
+}
+
+function filaAcceso(acceso) {
+    const app = catalogo.get(acceso.aplicativo_id);
+    const descubierto = shadowIT.get(acceso.aplicativo_id);
+    const revocado = Boolean(acceso.fecha_revocado);
+
+    let etiqueta;
+    if (descubierto) {
+        const clase = claseRiesgo(descubierto.puntaje_riesgo);
+        etiqueta = el("span", { clase: `badge risk-${clase}`, texto: `Shadow IT · ${Math.round(descubierto.puntaje_riesgo)}` });
+    } else if (app) {
+        etiqueta = el("span", { clase: `badge badge-${app.tipo_soporte_sso}`, texto: `SSO ${app.tipo_soporte_sso}` });
+    } else {
+        etiqueta = el("span", { clase: "badge badge-offboarding", texto: "Sin catálogo" });
+    }
+
+    const fechas = revocado
+        ? `Otorgado ${fecha(acceso.fecha_otorgado)} · Revocado ${fecha(acceso.fecha_revocado)}`
+        : `Otorgado ${fecha(acceso.fecha_otorgado)}`;
+
+    return el("li", { clase: `acceso${revocado ? " acceso-revocado" : ""}` }, [
+        el("div", { clase: "acceso-principal" }, [
+            el("span", { clase: "acceso-nombre", texto: acceso.aplicativo }),
+            etiqueta,
+        ]),
+        el("div", { clase: "acceso-meta" }, [
+            el("span", { texto: fechas }),
+            app ? el("span", { clase: "num", texto: `${formatoMoneda.format(app.costo_licencia_mensual || 0)}/mes` }) : el("span"),
+        ]),
+    ]);
+}
+
+function seccionAccesos(titulo, accesos, vacio) {
+    const encabezado = el("h3", { clase: "detalle-seccion", texto: `${titulo} (${accesos.length})` });
+    const contenido = accesos.length
+        ? el("ul", { clase: "lista-accesos" }, accesos.map(filaAcceso))
+        : el("p", { clase: "estado-vacio", texto: vacio });
+    return [encabezado, contenido];
+}
+
+async function abrirDetalle(usuario) {
+    usuarioEnDetalle = usuario;
+    const dialogo = document.getElementById("detalle-usuario");
+    const retirado = usuario.estado === "offboarding";
+
+    document.getElementById("detalle-nombre").textContent = usuario.nombre;
+    document.getElementById("detalle-correo").textContent = usuario.correo;
+    const estado = document.getElementById("detalle-estado");
+    estado.className = `badge ${retirado ? "badge-offboarding" : "badge-activo"}`;
+    estado.textContent = retirado ? "Offboarding" : "Activo";
+
+    const cuerpo = document.getElementById("detalle-cuerpo");
+    cuerpo.replaceChildren(el("p", { clase: "estado-vacio", texto: "Cargando aplicativos…" }));
+    document.getElementById("detalle-resumen").textContent = "";
+
+    const boton = document.getElementById("detalle-offboard");
+    boton.hidden = retirado;
+    boton.disabled = false;
+    boton.textContent = "Iniciar offboarding";
+    boton.onclick = () => ejecutarOffboarding(usuario.id, usuario.nombre, boton);
+
+    if (!dialogo.open) dialogo.showModal();
+
+    let accesos;
+    try {
+        accesos = await pedirJSON(`/api/usuarios/${encodeURIComponent(usuario.id)}/accesos?historial=1`);
+    } catch (error) {
+        console.error("No se pudieron cargar los accesos:", error);
+        cuerpo.replaceChildren(el("p", { clase: "estado-error", texto: "No se pudieron cargar los aplicativos de este usuario." }));
+        return;
+    }
+    if (usuarioEnDetalle !== usuario) return;  // se abrió otro usuario mientras cargaba
+
+    const vigentes = accesos.filter(a => !a.fecha_revocado);
+    const revocados = accesos.filter(a => a.fecha_revocado);
+    const costo = vigentes.reduce((suma, a) => suma + (catalogo.get(a.aplicativo_id)?.costo_licencia_mensual || 0), 0);
+    const conShadow = vigentes.filter(a => shadowIT.has(a.aplicativo_id)).length;
+
+    document.getElementById("detalle-resumen").textContent =
+        `${vigentes.length} ${vigentes.length === 1 ? "aplicativo vigente" : "aplicativos vigentes"} · ` +
+        `${formatoMoneda.format(costo)} al mes en licencias` +
+        (conShadow ? ` · ${conShadow} de Shadow IT` : "");
+
+    cuerpo.replaceChildren(
+        ...seccionAccesos("Accesos vigentes", vigentes, retirado ? "Sin accesos vigentes: el retiro ya se ejecutó." : "Este usuario no tiene accesos vigentes."),
+        ...(revocados.length ? seccionAccesos("Historial de accesos revocados", revocados, "") : []),
+    );
+}
+
+async function refrescarDetalle(usuarioId) {
+    const dialogo = document.getElementById("detalle-usuario");
+    if (!dialogo.open || !usuarioEnDetalle || usuarioEnDetalle.id !== usuarioId) return;
+    const usuarios = await pedirJSON("/api/usuarios");
+    const actualizado = usuarios.find(u => u.id === usuarioId);
+    if (actualizado) await abrirDetalle(actualizado);
+}
+
+function prepararDetalle() {
+    const dialogo = document.getElementById("detalle-usuario");
+    document.getElementById("detalle-cerrar").addEventListener("click", () => dialogo.close());
+    // Clic en el fondo oscuro (fuera de la tarjeta) cierra el detalle.
+    dialogo.addEventListener("click", evento => {
+        if (evento.target === dialogo) dialogo.close();
+    });
+    dialogo.addEventListener("close", () => { usuarioEnDetalle = null; });
+}
+
 async function cargarTodo() {
     await Promise.all([cargarUsuarios(), cargarAplicativos(), cargarShadowIT()]);
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    prepararDetalle();
     cargarTodo().catch(() => mostrarToast("No se pudo cargar el panel. Recarga la página.", "error"));
 });

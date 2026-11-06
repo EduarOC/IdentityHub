@@ -23,3 +23,15 @@ def test_tablas_del_panel_tienen_encabezados_con_alcance():
     encabezados = re.findall(r"<th\b[^>]*>", HTML)
     assert encabezados
     assert all('scope="col"' in th for th in encabezados)
+
+
+def test_detalle_de_usuario_es_un_dialogo_accesible():
+    dialogo = re.search(r'<dialog[^>]*id="detalle-usuario"[^>]*>', HTML).group(0)
+    assert 'aria-labelledby="detalle-nombre"' in dialogo
+    assert 'id="detalle-nombre"' in HTML
+    # showModal() da foco atrapado, cierre con Esc y fondo inerte sin código extra.
+    assert "showModal()" in JS
+
+
+def test_detalle_consulta_el_historial_de_accesos():
+    assert "/accesos?historial=1" in JS
