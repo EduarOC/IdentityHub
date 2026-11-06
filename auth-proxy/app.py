@@ -218,6 +218,12 @@ def proxy(path):
     return _reenviar_a_backend(path)
 
 
+# Flask registra por defecto /static/<archivo> para su propia carpeta estática, que el proxy no
+# tiene: respondía 404 y el panel del inventario quedaba sin estilos ni JavaScript. Esa ruta
+# pasa por el mismo control de sesión y reenvío que las demás.
+app.view_functions["static"] = lambda filename: proxy(f"static/{filename}")
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 9000))
     host = os.environ.get("HOST", "127.0.0.1")
