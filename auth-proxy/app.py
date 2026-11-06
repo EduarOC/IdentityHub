@@ -28,7 +28,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 # rechazan si Origin o Referer indican otro sitio (ver _mismo_origen).
 # Sin carpeta estática propia: Flask atiende /static/... por defecto y así interceptaba los
 # estilos y el JavaScript del aplicativo protegido (el panel del inventario quedaba sin ellos).
-app = Flask(__name__, static_folder=None)
+app = Flask(__name__, static_folder=None)  # NOSONAR: CSRF cubierto por SameSite y _mismo_origen (ver arriba)
 app.secret_key = os.environ.get("PROXY_SECRET_KEY") or os.urandom(24).hex()
 # En Render, HTTPS termina en el balanceador y llega HTTP al contenedor. ProxyFix hace que
 # Flask respete X-Forwarded-Proto/Host, para que la URL de retorno a Keycloak sea https://.
