@@ -30,6 +30,9 @@ PERMISO_APLICACIONES = "Application.Read.All"
 PERMISO_CONCESIONES = "DelegatedPermissionGrant.Read.All"
 PERMISOS_ENTRA = (PERMISO_USUARIOS, PERMISO_APLICACIONES, PERMISO_CONCESIONES)
 
+# Ruta de usuarios: igual en Microsoft Graph y en la API de administración de Keycloak.
+USUARIOS = "/users"
+
 # Parámetros OData de Microsoft Graph.
 SELECT, TOP, MAXIMO = "$select", "$top", "999"
 # Tope de páginas por consulta: evita un ciclo infinito si Graph devolviera siempre nextLink.
@@ -130,7 +133,7 @@ def probar_entra(tenant_id, client_id, client_secret):
     faltante se detecte al conectar y no a mitad de la sincronización. Devuelve el nombre del
     tenant, o su ID si la app no puede leer los datos de la organización (no hace falta)."""
     token = _token(tenant_id, client_id, client_secret)
-    for ruta, permiso in (("/users", PERMISO_USUARIOS), ("/servicePrincipals", PERMISO_APLICACIONES),
+    for ruta, permiso in ((USUARIOS, PERMISO_USUARIOS), ("/servicePrincipals", PERMISO_APLICACIONES),
                           ("/oauth2PermissionGrants", PERMISO_CONCESIONES)):
         _get(token, f"{GRAPH}{ruta}", {TOP: "1"}, permiso)
     try:
@@ -157,7 +160,7 @@ def _leer_usuarios(token):
             "correo": (u.get("mail") or u.get("userPrincipalName") or "").strip().lower(),
             "activo": bool(u.get("accountEnabled", True)),
         }
-        for u in _todas_las_paginas(token, f"{GRAPH}/users", {
+        for u in _todas_las_paginas(token, f"{GRAPH}{USUARIOS}", {
             SELECT: "id,displayName,mail,userPrincipalName,accountEnabled", TOP: MAXIMO}, PERMISO_USUARIOS)
         if u.get("id") and (u.get("mail") or u.get("userPrincipalName"))
     ]
@@ -289,7 +292,7 @@ def _admin_keycloak(metodo, token, realm, ruta, **kwargs):
 def probar_keycloak(realm, client_id, client_secret):
     """Comprueba credenciales y permisos leyendo un usuario. Devuelve el nombre del realm."""
     token = _token_keycloak(realm, client_id, client_secret)
-    _admin_keycloak("GET", token, realm, "/users", params={"max": "1", "briefRepresentation": "true"})
+    _admin_keycloak("GET", token, realm, USUARIOS, params={"max": "1", "briefRepresentation": "true"})
     return realm
 
 
@@ -302,7 +305,7 @@ def deshabilitar_en_keycloak(realm, client_id, client_secret, correo):
     token = _token_keycloak(realm, client_id, client_secret)
     cuentas = []
     for campo in ("email", "username"):
-        cuentas = _admin_keycloak("GET", token, realm, "/users",
+        cuentas = _admin_keycloak("GET", token, realm, USUARIOS,
                                   params={campo: correo, "exact": "true"}).json()
         if cuentas:
             break
