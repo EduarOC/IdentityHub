@@ -189,3 +189,21 @@ def test_logout_cierra_tambien_la_sesion_de_keycloak(proxy, client, monkeypatch)
     assert "post_logout_redirect_uri=http%3A%2F%2Flocalhost%2Flogin" in destino
     with client.session_transaction() as s:
         assert "usuario" not in s
+
+
+def test_logout_consulta_keycloak_si_el_proxy_arranco_antes(proxy, client, monkeypatch):
+    # En Render los proxies pueden arrancar antes que Keycloak: la URL se pide al cerrar sesión.
+    monkeypatch.setattr(proxy, "FIN_SESION_URL", None)
+    monkeypatch.setattr(proxy, "KEYCLOAK_URL", "http://keycloak:8080")
+    monkeypatch.setattr(proxy, "KEYCLOAK_EXTERNAL_URL", "https://sso.test")
+    metadata = {"end_session_endpoint": "http://keycloak:8080/realms/identityhub/protocol/openid-connect/logout"}
+    with patch.object(proxy.oauth.keycloak, "load_server_metadata", return_value=metadata):
+        r = client.get("/logout")
+    assert r.headers["Location"].startswith("https://sso.test/realms/identityhub/protocol/openid-connect/logout?")
+
+
+def test_logout_sin_keycloak_disponible_vuelve_al_login(proxy, client, monkeypatch):
+    monkeypatch.setattr(proxy, "FIN_SESION_URL", None)
+    with patch.object(proxy.oauth.keycloak, "load_server_metadata", side_effect=OSError("caído")):
+        r = client.get("/logout")
+    assert r.headers["Location"].endswith("/login")
