@@ -41,7 +41,7 @@
             <div class="panel">
                 <div class="panel-head">
                     <h2>Usuarios</h2>
-                    <span class="panel-hint">Offboarding revoca todos los accesos activos, incluido Shadow IT</span>
+                    <span class="panel-hint">Selecciona un nombre para ver sus aplicativos · el offboarding revoca todos los accesos activos</span>
                 </div>
                 <div class="table-scroll">
                     <table class="data-table" id="tabla-usuarios">
@@ -82,6 +82,24 @@
             <code>docs/INVESTIGACION_PENDIENTE.md</code> para reemplazarlos por el catálogo real.
         </footer>
     </main>
+
+    <dialog class="detalle" id="detalle-usuario" aria-labelledby="detalle-nombre">
+        <div class="detalle-tarjeta">
+            <header class="detalle-cabecera">
+                <div>
+                    <h2 id="detalle-nombre">Usuario</h2>
+                    <p class="detalle-correo" id="detalle-correo"></p>
+                </div>
+                <span class="badge" id="detalle-estado"></span>
+            </header>
+            <p class="detalle-resumen" id="detalle-resumen"></p>
+            <div class="detalle-cuerpo" id="detalle-cuerpo"></div>
+            <footer class="detalle-acciones">
+                <button type="button" class="btn-secundario" id="detalle-cerrar">Cerrar</button>
+                <button type="button" class="btn-offboard" id="detalle-offboard">Iniciar offboarding</button>
+            </footer>
+        </div>
+    </dialog>
 
     <output class="toast" id="toast" aria-live="polite"></output>
 
