@@ -433,14 +433,11 @@ async function revisarSincronizacion() {
     const antes = new Map(conectores.map(c => [c.tipo, c.estado]));
     await cargarConectores();
     const terminados = conectores.filter(c => antes.get(c.tipo) === "sincronizando" && c.estado !== "sincronizando");
-    for (const c of terminados) {
-        if (c.estado === "conectado") {
-            mostrarToast(`${c.nombre} sincronizado: ${textoResumen(c.resumen)}.`);
-            await cargarTodo();
-        } else {
-            mostrarToast(`La sincronización de ${c.nombre} falló. Revisa el mensaje en la tarjeta.`, "error");
-        }
-    }
+    terminados.forEach(c => {
+        if (c.estado === "conectado") mostrarToast(`${c.nombre} sincronizado: ${textoResumen(c.resumen)}.`);
+        else mostrarToast(`La sincronización de ${c.nombre} falló. Revisa el mensaje en la tarjeta.`, "error");
+    });
+    if (terminados.some(c => c.estado === "conectado")) await cargarTodo();
 }
 
 function vigilarSincronizacion() {

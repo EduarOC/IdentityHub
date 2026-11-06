@@ -637,23 +637,23 @@ def _recuperar_sincronizaciones_interrumpidas():
         session.close()
 
 
+def _guardar_usuario(session, u):
+    usuario = (session.query(Usuario).filter_by(origen="entra_id", id_externo=u["id"]).first()
+               or session.query(Usuario).filter_by(correo=u["correo"]).first())
+    if not usuario:
+        usuario = Usuario(nombre=u["nombre"] or u["correo"], correo=u["correo"])
+        session.add(usuario)
+    usuario.nombre = u["nombre"] or u["correo"]
+    usuario.origen, usuario.id_externo = "entra_id", u["id"]
+    if usuario.estado != "offboarding":
+        usuario.estado = "activo" if u["activo"] else "inactivo"
+    session.flush()
+    return usuario
+
+
 def _sincronizar_usuarios(session, usuarios_entra):
     """Crea o actualiza los usuarios. Devuelve {id en Entra: Usuario}."""
-    por_externo = {}
-    for u in usuarios_entra:
-        if not u["correo"]:
-            continue
-        usuario = (session.query(Usuario).filter_by(origen="entra_id", id_externo=u["id"]).first()
-                   or session.query(Usuario).filter_by(correo=u["correo"]).first())
-        if not usuario:
-            usuario = Usuario(nombre=u["nombre"] or u["correo"], correo=u["correo"])
-            session.add(usuario)
-        usuario.nombre = u["nombre"] or u["correo"]
-        usuario.origen, usuario.id_externo = "entra_id", u["id"]
-        if usuario.estado != "offboarding":
-            usuario.estado = "activo" if u["activo"] else "inactivo"
-        session.flush()
-        por_externo[u["id"]] = usuario
+    por_externo = {u["id"]: _guardar_usuario(session, u) for u in usuarios_entra if u["correo"]}
 
     vistos = {usuario.id for usuario in por_externo.values()}
     for usuario in session.query(Usuario).filter_by(origen="entra_id", estado="activo").all():
