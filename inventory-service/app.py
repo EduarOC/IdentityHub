@@ -559,12 +559,20 @@ def _obtener_credenciales_conector(session):
     """Obtiene las credenciales del conector desde la BD o desde variables de entorno."""
     migrar_columnas_conector()
     cfg = session.query(ConfiguracionConector).filter_by(proveedor="microsoft_entra_id").first()
-    tipo_auth = (cfg.tipo_auth if cfg and cfg.tipo_auth else os.environ.get("ENTRA_AUTH_TYPE", "secret")).strip()
-    tenant_id = (cfg.tenant_id if cfg and cfg.tenant_id else os.environ.get("ENTRA_TENANT_ID", "")).strip()
-    client_id = (cfg.client_id if cfg and cfg.client_id else os.environ.get("ENTRA_CLIENT_ID", "")).strip()
-    client_secret = (cfg.client_secret if cfg and cfg.client_secret else os.environ.get("ENTRA_CLIENT_SECRET", "")).strip()
-    client_cert_pem = (cfg.client_cert_pem if cfg and cfg.client_cert_pem else os.environ.get("ENTRA_CERT_PEM", "")).strip()
-    actualizado_en = cfg.actualizado_en.isoformat() if (cfg and cfg.actualizado_en) else None
+    if cfg is not None:
+        tipo_auth = (cfg.tipo_auth or "secret").strip()
+        tenant_id = (cfg.tenant_id or "").strip()
+        client_id = (cfg.client_id or "").strip()
+        client_secret = (cfg.client_secret or "").strip()
+        client_cert_pem = (cfg.client_cert_pem or "").strip()
+        actualizado_en = cfg.actualizado_en.isoformat() if cfg.actualizado_en else None
+    else:
+        tipo_auth = os.environ.get("ENTRA_AUTH_TYPE", "secret").strip()
+        tenant_id = os.environ.get("ENTRA_TENANT_ID", "").strip()
+        client_id = os.environ.get("ENTRA_CLIENT_ID", "").strip()
+        client_secret = os.environ.get("ENTRA_CLIENT_SECRET", "").strip()
+        client_cert_pem = os.environ.get("ENTRA_CERT_PEM", "").strip()
+        actualizado_en = None
     return cfg, tipo_auth, tenant_id, client_id, client_secret, client_cert_pem, actualizado_en
 
 
@@ -767,6 +775,46 @@ def sincronizar_conector_entra():
         session.close()
 
 
+@app.route("/api/conector/entra-id/desconectar", methods=["POST"])
+def desconectar_tenant():
+    """
+    Desconecta el tenant de Microsoft Entra ID y vacía el inventario:
+    - Borra las credenciales configuradas (Tenant ID, Client ID, Secretos, Certificados).
+    - Elimina todos los registros guardados (Shadow IT, Catálogo, Usuarios, Accesos y Eventos de Offboarding).
+    - Deja el panel completamente vacío y en estado limpio.
+    """
+    session = SessionLocal()
+    try:
+        cfg = session.query(ConfiguracionConector).filter_by(proveedor="microsoft_entra_id").first()
+        if not cfg:
+            cfg = ConfiguracionConector(proveedor="microsoft_entra_id")
+            session.add(cfg)
+
+        cfg.tenant_id = None
+        cfg.client_id = None
+        cfg.client_secret = None
+        cfg.client_cert_pem = None
+        cfg.tipo_auth = "secret"
+        cfg.actualizado_en = datetime.now(timezone.utc)
+
+        # Vaciar por completo los datos de inventario
+        session.query(EventoOffboarding).delete()
+        session.query(Acceso).delete()
+        session.query(Usuario).delete()
+        session.query(Aplicativo).delete()
+        session.commit()
+
+        return jsonify({
+            "success": True,
+            "mensaje": "Tenant desconectado exitosamente. Se eliminaron las credenciales y el inventario ha quedado completamente vacío."
+        })
+    except Exception as e:
+        session.rollback()
+        return jsonify({"success": False, "error": f"Error al desconectar el tenant: {e}"}), 500
+    finally:
+        session.close()
+
+
 @app.route("/api/aplicativos/riesgo", methods=["GET"])
 def listar_por_riesgo():
     """Lista los aplicativos descubiertos vía OAuth, ordenados de mayor a menor riesgo."""
@@ -889,7 +937,11 @@ def sembrar_datos_ejemplo():
             except Exception as e:
                 app.logger.warning("Auto-sincronización inicial en startup omitida: %s", e)
 
-        if session.query(Aplicativo).count() > 0:
+        # Si ya existe un registro de configuración de conector (incluso desconectado), no sembrar datos mock
+        if session.query(ConfiguracionConector).count() > 0:
+            return
+
+        if session.query(Aplicativo).count() > 0 or session.query(Usuario).count() > 0:
             return
 
         slack = Aplicativo(nombre="Slack", tipo_soporte_sso="nativo", costo_licencia_mensual=8.0)

@@ -81,6 +81,9 @@
                     <button class="btn-action btn-primary" id="btn-sincronizar-entra">
                         <span id="sync-spinner">🔄</span> Sincronizar desde Entra ID
                     </button>
+                    <button class="btn-action btn-danger" id="btn-desconectar-tenant" title="Desconectar tenant y vaciar datos del inventario">
+                        <span>🔌</span> Desconectar Tenant
+                    </button>
                 </div>
             </div>
             <div class="shadow-grid" id="shadow-grid"></div>
@@ -155,6 +158,10 @@
                 <div class="status-box" id="status-box" style="display: none;"></div>
             </div>
             <div class="modal-footer">
+                <button class="btn-action btn-danger" id="btn-modal-desconectar" title="Desconectar tenant y vaciar datos">
+                    <span>🔌</span> Desconectar Tenant
+                </button>
+                <div style="flex: 1;"></div>
                 <button class="btn-action btn-secondary" id="btn-probar-conexion">
                     <span id="test-spinner">🔍</span> Probar Conexión
                 </button>

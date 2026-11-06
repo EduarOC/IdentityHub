@@ -21,6 +21,19 @@ async function cargarUsuarios() {
     const tbody = document.querySelector("#tabla-usuarios tbody");
     tbody.innerHTML = "";
 
+    if (!usuarios || usuarios.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="table-empty-msg">
+                    No hay usuarios registrados en el sistema.<br>
+                    <small>Configura un tenant en <strong>"Configurar Tenant Microsoft"</strong> y sincroniza desde Entra ID.</small>
+                </td>
+            </tr>
+        `;
+        document.getElementById("kpi-usuarios").textContent = 0;
+        return;
+    }
+
     usuarios.forEach(u => {
         const fila = document.createElement("tr");
         const esOffboarding = u.estado === "offboarding";
@@ -70,6 +83,20 @@ async function cargarAplicativos() {
     const apps = await res.json();
     const tbody = document.querySelector("#tabla-aplicativos tbody");
     tbody.innerHTML = "";
+
+    if (!apps || apps.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="3" class="table-empty-msg">
+                    No hay aplicativos en el catálogo de TI.<br>
+                    <small>Conecta tu tenant de Entra ID para sincronizar las aplicaciones gestionadas.</small>
+                </td>
+            </tr>
+        `;
+        document.getElementById("kpi-apps").textContent = 0;
+        document.getElementById("kpi-costo").textContent = "$0";
+        return;
+    }
 
     let costoTotal = 0;
     apps.forEach(a => {
@@ -311,6 +338,52 @@ async function sincronizarEntraID() {
     }
 }
 
+async function desconectarTenant() {
+    const confirmacion = confirm(
+        "¿Estás seguro de que deseas desconectar el tenant de tu empresa y vaciar el módulo?\n\n" +
+        "Esta acción eliminará las credenciales configuradas y vaciará completamente todos los datos del inventario (usuarios, aplicativos de catálogo y Shadow IT)."
+    );
+    if (!confirmacion) return;
+
+    const btn = document.getElementById("btn-desconectar-tenant");
+    if (btn) btn.disabled = true;
+    const btnModal = document.getElementById("btn-modal-desconectar");
+    if (btnModal) btnModal.disabled = true;
+
+    mostrarToast("🔌 Desconectando tenant y vaciando inventario...");
+
+    try {
+        const res = await fetch("/api/conector/entra-id/desconectar", {
+            method: "POST"
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            mostrarToast("✅ " + data.mensaje);
+
+            // Limpiar inputs del modal
+            document.getElementById("cfg-tenant-id").value = "";
+            document.getElementById("cfg-client-id").value = "";
+            document.getElementById("cfg-client-cert").value = "";
+            document.getElementById("cfg-client-secret").value = "";
+            const hintCert = document.getElementById("hint-cert");
+            if (hintCert) hintCert.innerHTML = "Usa el archivo <code>IdentityHub_Completo.pem</code> generado en tu carpeta Descargas.";
+            const hintSecret = document.getElementById("hint-secret");
+            if (hintSecret) hintSecret.textContent = "Para organizaciones donde los secretos no están bloqueados por directiva.";
+
+            cerrarModalTenant();
+            await cargarTodo();
+        } else {
+            mostrarToast(`❌ ${data.error || "No se pudo desconectar el tenant."}`);
+        }
+    } catch (e) {
+        mostrarToast(`❌ Error de comunicación: ${e.message}`);
+    } finally {
+        if (btn) btn.disabled = false;
+        if (btnModal) btnModal.disabled = false;
+    }
+}
+
 async function cargarTodo() {
     await Promise.all([cargarUsuarios(), cargarAplicativos(), cargarShadowIT()]);
 }
@@ -324,6 +397,8 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("btn-probar-conexion")?.addEventListener("click", probarConexionTenant);
     document.getElementById("btn-guardar-tenant")?.addEventListener("click", guardarConfigTenant);
     document.getElementById("btn-sincronizar-entra")?.addEventListener("click", sincronizarEntraID);
+    document.getElementById("btn-desconectar-tenant")?.addEventListener("click", desconectarTenant);
+    document.getElementById("btn-modal-desconectar")?.addEventListener("click", desconectarTenant);
 
     // Conmutador de modo de autenticación (Certificado vs Secreto)
     document.getElementById("mode-cert")?.addEventListener("change", () => toggleModoAuth("certificate"));

@@ -110,3 +110,30 @@ def test_sincronizar_importa_apps_y_calcula_riesgo(client, inv):
     nombres = [a["nombre"] for a in riesgos]
     assert "Trello Corporate" in nombres
     assert "Grammarly" in nombres
+
+
+def test_desconectar_tenant_vacia_inventario(client, inv):
+    # 1. Configurar tenant y sembrar algunos datos
+    client.post("/api/conector/entra-id", json={
+        "tipo_auth": "secret",
+        "tenant_id": "tenant-para-desconectar",
+        "client_id": "client-para-desconectar",
+        "client_secret": "secret-123",
+    })
+    inv.sembrar_datos_ejemplo()
+
+    # 2. Ejecutar desconexión
+    r = client.post("/api/conector/entra-id/desconectar")
+    assert r.status_code == 200
+    assert r.get_json()["success"] is True
+
+    # 3. Validar que las credenciales quedaron vacías
+    cfg = client.get("/api/conector/entra-id").get_json()
+    assert cfg["configurado"] is False
+    assert cfg["tenant_id"] == ""
+    assert cfg["client_id"] == ""
+
+    # 4. Validar que las tablas de datos quedaron totalmente vacías
+    assert client.get("/api/usuarios").get_json() == []
+    assert client.get("/api/aplicativos").get_json() == []
+    assert client.get("/api/aplicativos/riesgo").get_json() == []
