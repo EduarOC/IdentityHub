@@ -250,13 +250,11 @@ async function confirmarOffboarding(usuarioId, nombre) {
     else if (vigentes.length === 1) mensaje = `Se revocará el único acceso vigente de ${nombre}:`;
     else mensaje = `Se revocarán los ${vigentes.length} accesos vigentes de ${nombre}:`;
 
-    return confirmar({
-        titulo: `Offboarding de ${nombre}`,
-        mensaje,
-        lista,
-        notas,
-        accion: vigentes.length ? `Revocar ${vigentes.length} ${vigentes.length === 1 ? "acceso" : "accesos"}` : "Marcar como retirado",
-    });
+    let accion = "Marcar como retirado";
+    if (vigentes.length === 1) accion = "Revocar 1 acceso";
+    else if (vigentes.length > 1) accion = `Revocar ${vigentes.length} accesos`;
+
+    return confirmar({ titulo: `Offboarding de ${nombre}`, mensaje, lista, notas, accion });
 }
 
 async function ejecutarOffboarding(usuarioId, nombre, boton) {
