@@ -116,7 +116,8 @@ def test_tipo_sso(modo, esperado):
 def test_extraer_entra_arma_usuarios_aplicativos_asignaciones_y_concesiones():
     respuestas = {
         "/users": {"value": [
-            {"id": "u1", "displayName": "Laura", "mail": "Laura@Contoso.com", "accountEnabled": True},
+            {"id": "u1", "displayName": "Laura", "mail": "Laura@Contoso.com", "accountEnabled": True,
+             "userType": "Member"},
             {"id": "u2", "displayName": "Invitado", "userPrincipalName": "inv#EXT#@contoso.com", "accountEnabled": False},
             {"id": "u3", "displayName": "Sin correo"},
         ]},
@@ -141,8 +142,8 @@ def test_extraer_entra_arma_usuarios_aplicativos_asignaciones_y_concesiones():
         datos = mod.extraer_entra(T, C, "s")
 
     assert datos["usuarios"] == [
-        {"id": "u1", "nombre": "Laura", "correo": "laura@contoso.com", "activo": True},
-        {"id": "u2", "nombre": "Invitado", "correo": "inv#ext#@contoso.com", "activo": False},
+        {"id": "u1", "nombre": "Laura", "correo": "laura@contoso.com", "activo": True, "invitado": False},
+        {"id": "u2", "nombre": "Invitado", "correo": "inv#ext#@contoso.com", "activo": False, "invitado": True},
     ]
     assert datos["aplicativos"] == [{"id": "sp1", "nombre": "Salesforce", "sso": "nativo"}]
     assert datos["asignaciones"] == [{"usuario_id": "u1", "aplicativo_id": "sp1"}]
@@ -150,3 +151,15 @@ def test_extraer_entra_arma_usuarios_aplicativos_asignaciones_y_concesiones():
         {"aplicativo_id": "sp1", "nombre": "Salesforce", "alcance": "User.Read", "usuario_id": None},
         {"aplicativo_id": "sp9", "nombre": "App externa", "alcance": "Mail.Read", "usuario_id": "u1"},
     ]
+
+
+@pytest.mark.parametrize("usuario, invitado", [
+    ({"userType": "Guest", "userPrincipalName": "ana_gmail.com#EXT#@contoso.onmicrosoft.com"}, True),
+    ({"userType": "Guest", "userPrincipalName": "ana@contoso.com"}, True),
+    ({"userType": None, "userPrincipalName": "viejo#ext#@contoso.onmicrosoft.com"}, True),
+    ({"userType": "Member", "userPrincipalName": "ana@contoso.com"}, False),
+])
+def test_detecta_invitados(usuario, invitado):
+    datos = {"value": [{"id": "u1", "displayName": "Ana", "mail": "ana@x.com", **usuario}]}
+    with patch.object(mod.requests, "get", return_value=_resp(datos)):
+        assert mod._leer_usuarios("tok")[0]["invitado"] is invitado

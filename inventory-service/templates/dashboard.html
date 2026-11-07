@@ -58,6 +58,38 @@
                     <h2>Usuarios</h2>
                     <span class="panel-hint">Selecciona un nombre para ver sus aplicativos · el offboarding revoca todos los accesos activos</span>
                 </div>
+                <div class="filtros" role="search" aria-label="Filtrar usuarios">
+                    <label class="filtro filtro-texto">
+                        <span class="sr-only">Buscar por nombre o correo</span>
+                        <input type="search" id="filtro-texto" placeholder="Buscar por nombre o correo" autocomplete="off" spellcheck="false">
+                    </label>
+                    <label class="filtro">
+                        <span>Estado</span>
+                        <select id="filtro-estado">
+                            <option value="">Todos</option>
+                            <option value="activo">Activos</option>
+                            <option value="inactivo">Inactivos</option>
+                            <option value="offboarding">Offboarding</option>
+                        </select>
+                    </label>
+                    <label class="filtro">
+                        <span>Tipo</span>
+                        <select id="filtro-tipo">
+                            <option value="">Todos</option>
+                            <option value="miembro">Miembros</option>
+                            <option value="invitado">Invitados</option>
+                        </select>
+                    </label>
+                    <label class="filtro">
+                        <span>Accesos</span>
+                        <select id="filtro-accesos">
+                            <option value="">Todos</option>
+                            <option value="con">Con accesos</option>
+                            <option value="sin">Sin accesos</option>
+                        </select>
+                    </label>
+                </div>
+                <p class="filtros-resumen" id="usuarios-resumen" aria-live="polite"></p>
                 <div class="table-scroll">
                     <table class="data-table" id="tabla-usuarios">
                         <thead>
@@ -65,6 +97,9 @@
                         </thead>
                         <tbody><tr><td colspan="5" class="estado-vacio">Cargando usuarios…</td></tr></tbody>
                     </table>
+                </div>
+                <div class="mas-usuarios">
+                    <button type="button" class="btn-secundario" id="usuarios-mas" hidden>Mostrar más</button>
                 </div>
             </div>
 

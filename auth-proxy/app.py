@@ -118,10 +118,42 @@ HEADERS_NO_REENVIABLES = {"host", "cookie", "content-length", "accept-encoding"}
 HEADERS_NO_DEVOLVER = {"content-encoding", "content-length", "transfer-encoding", "connection"}
 
 
+# En el plan gratuito de Render los servicios se duermen y tardan hasta un minuto en despertar.
+# Mientras tanto, en vez de un error 500 o 502, se muestra esta página, que se recarga sola.
+# Sin estilos ni scripts en línea, para cumplir la CSP del proxy.
+PAGINA_DESPERTANDO = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="15">
+<title>IdentityHub está despertando</title></head>
+<body><main>
+<h1>IdentityHub está despertando</h1>
+<p>Uno de los servicios estaba en reposo y está arrancando. Esto toma hasta un minuto.</p>
+<p>La página se recargará sola en unos segundos. Si no, <a href="">recárgala</a>.</p>
+</main></body></html>"""
+SEGUNDOS_REINTENTO = "15"
+CODIGOS_NO_DISPONIBLE = {502, 503, 504}
+
+
+def _respuesta_despertando():
+    """503 con Retry-After: una página para el navegador o JSON para las llamadas del panel."""
+    cabeceras = {"Retry-After": SEGUNDOS_REINTENTO, "Cache-Control": "no-store"}
+    if request.accept_mimetypes.accept_html and request.method == "GET":
+        return Response(PAGINA_DESPERTANDO, 503, cabeceras, mimetype="text/html")
+    return Response(json.dumps({"error": "IdentityHub está despertando. Intenta de nuevo en unos segundos."}),
+                    503, cabeceras, mimetype="application/json")
+
+
 @app.route("/login", methods=["GET"])
 def login():
     redirect_uri = url_for("auth_callback", _external=True)
-    return oauth.keycloak.authorize_redirect(redirect_uri)
+    try:
+        return oauth.keycloak.authorize_redirect(redirect_uri)
+    # Keycloak dormido: sus metadatos llegan vacíos, como HTML de Render o no llegan; cualquier
+    # fallo al preparar el login se trata como «despertando».
+    except Exception:
+        app.logger.warning("Keycloak no respondió al iniciar sesión; se muestra la página de espera")
+        return _respuesta_despertando()
 
 
 def _roles_del_token(token):
@@ -214,16 +246,23 @@ def _reenviar_a_backend(path):
     }
     headers_reenviados["X-Forwarded-User"] = usuario["email"]
 
-    respuesta = requests.request(
-        method=request.method,
-        url=url_destino,
-        headers=headers_reenviados,
-        params=request.args,
-        data=request.get_data(),
-        auth=(BACKEND_SERVICE_USER, BACKEND_SERVICE_PASSWORD),
-        allow_redirects=False,
-        timeout=10,
-    )
+    try:
+        respuesta = requests.request(
+            method=request.method,
+            url=url_destino,
+            headers=headers_reenviados,
+            params=request.args,
+            data=request.get_data(),
+            auth=(BACKEND_SERVICE_USER, BACKEND_SERVICE_PASSWORD),
+            allow_redirects=False,
+            # Conectar rápido, pero esperar la respuesta lo que tarde en despertar el aplicativo.
+            timeout=(10, 60),
+        )
+    except requests.RequestException:
+        app.logger.warning("El aplicativo protegido no respondió; se muestra la página de espera")
+        return _respuesta_despertando()
+    if respuesta.status_code in CODIGOS_NO_DISPONIBLE:
+        return _respuesta_despertando()
 
     headers_respuesta = [
         (k, v) for k, v in respuesta.raw.headers.items() if k.lower() not in HEADERS_NO_DEVOLVER

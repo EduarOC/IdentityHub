@@ -12,7 +12,7 @@ import threading
 from datetime import datetime, timezone, timedelta
 
 from flask import Flask, Response, jsonify, request, render_template
-from sqlalchemy import create_engine, inspect, text, Column, Integer, String, Float, DateTime, ForeignKey, Text
+from sqlalchemy import create_engine, func, inspect, text, Column, Integer, String, Float, DateTime, ForeignKey, Text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 import conectores
@@ -123,6 +123,8 @@ class Usuario(Base):
     # 'manual' o el conector que lo trajo ('entra_id'), con su identificador allá.
     origen = Column(String, nullable=False, default="manual")
     id_externo = Column(String, nullable=True)
+    # 'miembro' o 'invitado' (cuenta externa B2B del tenant).
+    tipo = Column(String, nullable=False, default="miembro")
 
     accesos = relationship("Acceso", back_populates="usuario")
 
@@ -246,17 +248,21 @@ def panel():
 
 @app.route("/api/usuarios", methods=["GET"])
 def listar_usuarios():
+    """Usuarios ordenados por nombre, con sus accesos vigentes. Un solo conteo agrupado en vez de
+    una consulta por usuario: con un tenant real son cientos de filas."""
     session = SessionLocal()
     try:
-        usuarios = session.query(Usuario).all()
-        resultado = []
-        for u in usuarios:
-            num_accesos = session.query(Acceso).filter_by(usuario_id=u.id, fecha_revocado=None).count()
-            resultado.append({
-                "id": u.id, "nombre": u.nombre, "correo": u.correo,
-                "estado": u.estado, "accesos_activos": num_accesos,
-            })
-        return jsonify(resultado)
+        vigentes = dict(
+            session.query(Acceso.usuario_id, func.count(Acceso.id))
+            .filter(Acceso.fecha_revocado.is_(None)).group_by(Acceso.usuario_id).all()
+        )
+        usuarios = session.query(Usuario).order_by(func.lower(Usuario.nombre), Usuario.id).all()
+        return jsonify([
+            {
+                "id": u.id, "nombre": u.nombre, "correo": u.correo, "estado": u.estado,
+                "tipo": u.tipo or "miembro", "accesos_activos": vigentes.get(u.id, 0),
+            } for u in usuarios
+        ])
     finally:
         session.close()
 
@@ -705,6 +711,7 @@ def _guardar_usuario(session, u):
         session.add(usuario)
     usuario.nombre = u["nombre"] or u["correo"]
     usuario.origen, usuario.id_externo = "entra_id", u["id"]
+    usuario.tipo = "invitado" if u.get("invitado") else "miembro"
     if usuario.estado != "offboarding":
         usuario.estado = "activo" if u["activo"] else "inactivo"
     session.flush()
@@ -802,7 +809,8 @@ def aplicar_sincronizacion_entra(session, datos):
 # constantes del código, nunca entrada del usuario.
 COLUMNAS_NUEVAS = {
     "aplicativos": {"id_externo": "VARCHAR"},
-    "usuarios": {"origen": "VARCHAR NOT NULL DEFAULT 'manual'", "id_externo": "VARCHAR"},
+    "usuarios": {"origen": "VARCHAR NOT NULL DEFAULT 'manual'", "id_externo": "VARCHAR",
+                 "tipo": "VARCHAR NOT NULL DEFAULT 'miembro'"},
     "accesos": {"origen": "VARCHAR NOT NULL DEFAULT 'manual'"},
     "eventos_offboarding": {"resultado_sso": "VARCHAR"},
 }
