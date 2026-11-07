@@ -261,7 +261,9 @@ def test_login_con_keycloak_dormido_muestra_la_pagina_de_espera(proxy, client):
     cuerpo = r.get_data(as_text=True)
     assert "IdentityHub está despertando" in cuerpo
     assert 'http-equiv="refresh"' in cuerpo
-    assert "<script" not in cuerpo and "style" not in cuerpo  # cumple la CSP del proxy
+    # Cumple la CSP del proxy: sin scripts ni estilos en línea.
+    assert "<script" not in cuerpo
+    assert "style" not in cuerpo
 
 
 def test_aplicativo_dormido_muestra_la_pagina_de_espera(proxy, sesion_iniciada):

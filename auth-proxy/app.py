@@ -149,7 +149,9 @@ def login():
     redirect_uri = url_for("auth_callback", _external=True)
     try:
         return oauth.keycloak.authorize_redirect(redirect_uri)
-    except Exception:  # noqa: BLE001 - Keycloak dormido: sus metadatos llegan vacíos, como HTML o no llegan
+    # Keycloak dormido: sus metadatos llegan vacíos, como HTML de Render o no llegan; cualquier
+    # fallo al preparar el login se trata como «despertando».
+    except Exception:
         app.logger.warning("Keycloak no respondió al iniciar sesión; se muestra la página de espera")
         return _respuesta_despertando()
 

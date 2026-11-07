@@ -144,10 +144,11 @@ function pintarUsuarios() {
     } else if (hayFiltros()) {
         resumen.textContent = `${filtrados.length} de ${usuariosCargados.length} usuarios coinciden` +
             (visibles.length < filtrados.length ? ` · mostrando ${visibles.length}` : "");
+    } else if (visibles.length < filtrados.length) {
+        resumen.textContent = `Mostrando ${visibles.length} de ${filtrados.length} usuarios`;
     } else {
-        resumen.textContent = visibles.length < filtrados.length
-            ? `Mostrando ${visibles.length} de ${filtrados.length} usuarios`
-            : `${filtrados.length} ${filtrados.length === 1 ? "usuario" : "usuarios"}`;
+        const palabra = filtrados.length === 1 ? "usuario" : "usuarios";
+        resumen.textContent = `${filtrados.length} ${palabra}`;
     }
     mas.hidden = visibles.length >= filtrados.length;
     mas.textContent = `Mostrar ${Math.min(POR_PAGINA, filtrados.length - visibles.length)} más`;
