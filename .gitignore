@@ -25,3 +25,6 @@ coverage.xml
 .claude/skills/revisar-panel/.panel.*
 .claude/skills/impeccable/scripts/bin/
 evidencias-uat/
+
+# graphify: grafo de conocimiento generado localmente
+graphify-out/
