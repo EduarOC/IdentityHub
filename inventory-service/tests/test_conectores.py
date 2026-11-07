@@ -382,3 +382,27 @@ def test_resumen_guardado_es_json_valido(client, inv):
     with inv.SessionLocal() as s:
         evento = s.query(inv.EventoConector).filter_by(accion="sincronizar").order_by(inv.EventoConector.id.desc()).first()
         assert json.loads(evento.detalle)["usuarios"] == 2
+
+
+def test_sincronizar_marca_invitados_y_lista_ordenada(client, inv):
+    _conectar(client, inv)
+    usuarios = [
+        {"id": "u1", "nombre": "zoe Ruiz", "correo": "zoe@contoso.com", "activo": True},
+        {"id": "u2", "nombre": "Ana Gómez", "correo": "ana@gmail.com", "activo": True, "invitado": True},
+        {"id": "u3", "nombre": "bruno Díaz", "correo": "bruno@contoso.com", "activo": False},
+    ]
+    _sincronizar(client, inv, _entra(usuarios=usuarios, asignaciones=[], concesiones=[]))
+    lista = client.get("/api/usuarios").get_json()
+    assert [u["nombre"] for u in lista] == ["Ana Gómez", "bruno Díaz", "zoe Ruiz"]
+    assert [u["tipo"] for u in lista] == ["invitado", "miembro", "miembro"]
+    assert all(u["accesos_activos"] == 0 for u in lista)
+
+
+def test_conteo_de_accesos_vigentes_por_usuario(client, con_datos):
+    lista = {u["nombre"]: u for u in client.get("/api/usuarios").get_json()}
+    ana = lista["Ana Torres"]["id"]
+    assert lista["Ana Torres"]["accesos_activos"] == 2
+    client.post(f"/api/usuarios/{ana}/offboarding", json={})
+    lista = {u["nombre"]: u for u in client.get("/api/usuarios").get_json()}
+    assert lista["Ana Torres"]["accesos_activos"] == 0
+    assert lista["Carlos Ruiz"]["accesos_activos"] == 2

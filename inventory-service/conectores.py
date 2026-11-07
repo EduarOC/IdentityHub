@@ -159,9 +159,12 @@ def _leer_usuarios(token):
             "nombre": (u.get("displayName") or u.get("userPrincipalName") or "").strip(),
             "correo": (u.get("mail") or u.get("userPrincipalName") or "").strip().lower(),
             "activo": bool(u.get("accountEnabled", True)),
+            # Invitados (B2B): userType "Guest", o un UPN con #EXT# en tenants antiguos.
+            "invitado": u.get("userType") == "Guest" or "#EXT#" in (u.get("userPrincipalName") or "").upper(),
         }
         for u in _todas_las_paginas(token, f"{GRAPH}{USUARIOS}", {
-            SELECT: "id,displayName,mail,userPrincipalName,accountEnabled", TOP: MAXIMO}, PERMISO_USUARIOS)
+            SELECT: "id,displayName,mail,userPrincipalName,accountEnabled,userType", TOP: MAXIMO},
+            PERMISO_USUARIOS)
         if u.get("id") and (u.get("mail") or u.get("userPrincipalName"))
     ]
 

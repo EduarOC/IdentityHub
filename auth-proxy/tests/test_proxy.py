@@ -1,4 +1,5 @@
 """RF-01 a RF-04 / HU-01 a HU-03: login único, protección del legacy y propagación de identidad."""
+import pytest
 from unittest.mock import MagicMock, patch
 
 from flask import redirect
@@ -73,7 +74,7 @@ def test_con_sesion_reenvia_con_identidad_y_cuenta_de_servicio(proxy, sesion_ini
     # Nunca se reenvían la cookie de sesión del proxy ni el Host original.
     assert "Cookie" not in kw["headers"]
     assert "Host" not in kw["headers"]
-    assert kw["timeout"] == 10
+    assert kw["timeout"] == (10, 60)
     assert kw["allow_redirects"] is False
 
 
@@ -93,10 +94,10 @@ def test_reenvia_metodo_y_cuerpo(proxy, sesion_iniciada):
 
 
 def test_propaga_errores_del_backend(proxy, sesion_iniciada):
-    with patch.object(proxy.requests, "request", return_value=_respuesta_backend(503, b"caido")):
+    with patch.object(proxy.requests, "request", return_value=_respuesta_backend(404, b"no existe")):
         r = sesion_iniciada.get("/")
-    assert r.status_code == 503
-    assert r.data == b"caido"
+    assert r.status_code == 404
+    assert r.data == b"no existe"
 
 
 def test_detras_de_https_la_url_de_retorno_es_https(proxy, client):
@@ -250,3 +251,49 @@ def test_el_proxy_respeta_la_csp_del_aplicativo(proxy, sesion_iniciada):
 def test_hsts_solo_con_https(proxy, client, monkeypatch):
     monkeypatch.setitem(proxy.app.config, "SESSION_COOKIE_SECURE", True)
     assert client.get("/facturas").headers["Strict-Transport-Security"].startswith("max-age=31536000")
+
+
+def test_login_con_keycloak_dormido_muestra_la_pagina_de_espera(proxy, client):
+    with patch.object(proxy.oauth.keycloak, "authorize_redirect", side_effect=ValueError("metadatos vacíos")):
+        r = client.get("/login", headers={"Accept": "text/html"})
+    assert r.status_code == 503
+    assert r.headers["Retry-After"] == "15"
+    cuerpo = r.get_data(as_text=True)
+    assert "IdentityHub está despertando" in cuerpo
+    assert 'http-equiv="refresh"' in cuerpo
+    assert "<script" not in cuerpo and "style" not in cuerpo  # cumple la CSP del proxy
+
+
+def test_aplicativo_dormido_muestra_la_pagina_de_espera(proxy, sesion_iniciada):
+    with patch.object(proxy.requests, "request", side_effect=proxy.requests.ConnectionError("dormido")):
+        r = sesion_iniciada.get("/", headers={"Accept": "text/html"})
+    assert r.status_code == 503
+    assert "despertando" in r.get_data(as_text=True)
+
+
+def test_las_llamadas_del_panel_reciben_json_mientras_despierta(proxy, sesion_iniciada):
+    with patch.object(proxy.requests, "request", side_effect=proxy.requests.Timeout("lento")):
+        r = sesion_iniciada.get("/api/usuarios", headers={"Accept": "application/json"})
+    assert r.status_code == 503
+    assert "despertando" in r.get_json()["error"]
+
+
+@pytest.mark.parametrize("codigo", [502, 503, 504])
+def test_aplicativo_no_disponible_en_render_se_trata_igual(proxy, sesion_iniciada, codigo):
+    with patch.object(proxy.requests, "request", return_value=_respuesta_backend(status=codigo, body=b"<html>Render</html>")):
+        r = sesion_iniciada.get("/", headers={"Accept": "text/html"})
+    assert r.status_code == 503
+    assert "despertando" in r.get_data(as_text=True)
+
+
+def test_otros_errores_del_aplicativo_pasan_tal_cual(proxy, sesion_iniciada):
+    with patch.object(proxy.requests, "request", return_value=_respuesta_backend(status=500, body=b"fallo")):
+        r = sesion_iniciada.get("/api/x")
+    assert r.status_code == 500
+    assert r.get_data() == b"fallo"
+
+
+def test_el_reenvio_espera_lo_que_tarde_en_despertar(proxy, sesion_iniciada):
+    with patch.object(proxy.requests, "request", return_value=_respuesta_backend()) as m:
+        sesion_iniciada.get("/facturas")
+    assert m.call_args.kwargs["timeout"] == (10, 60)

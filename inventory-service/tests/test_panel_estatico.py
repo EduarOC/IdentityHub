@@ -75,3 +75,15 @@ def test_panel_cumple_una_csp_estricta():
     assert not re.search(r"<script(?![^>]*\bsrc=)", HTML)
     assert " style=" not in HTML
     assert " onclick=" not in HTML
+
+
+def test_filtros_de_usuarios_con_etiquetas():
+    # Cada filtro tiene su etiqueta visible (o para lectores de pantalla en la búsqueda).
+    for campo in ("filtro-texto", "filtro-estado", "filtro-tipo", "filtro-accesos"):
+        assert re.search(rf'<label class="filtro[^"]*">\s*<span[^>]*>[^<]+</span>\s*<(input|select)[^>]*id="{campo}"', HTML)
+    assert 'id="usuarios-resumen" aria-live="polite"' in HTML
+
+
+def test_panel_marca_invitados_y_pagina():
+    assert "badge-invitado" in JS
+    assert "POR_PAGINA = 50" in JS

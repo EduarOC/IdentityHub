@@ -73,25 +73,95 @@ function filaMensaje(tbody, columnas, mensaje, clase = "estado-vacio") {
 }
 
 // ------------------------------------------------------------------ usuarios
+// Todos los usuarios llegan de una vez; la búsqueda, los filtros y la paginación se hacen aquí.
+const POR_PAGINA = 50;
+let usuariosCargados = [];
+let limiteUsuarios = POR_PAGINA;
+
 async function cargarUsuarios() {
     const tbody = document.querySelector("#tabla-usuarios tbody");
-    let usuarios;
     try {
-        usuarios = await pedirJSON("/api/usuarios");
+        usuariosCargados = await pedirJSON("/api/usuarios");
     } catch {
         filaMensaje(tbody, 5, "No se pudieron cargar los usuarios. Recarga la página en unos segundos.", "estado-error");
         document.getElementById("kpi-usuarios").textContent = "—";
         return;
     }
+    document.getElementById("kpi-usuarios").textContent =
+        usuariosCargados.filter(u => u.estado === "activo").length;
+    pintarUsuarios();
+}
 
-    if (usuarios.length === 0) {
+function sinTildes(texto) {
+    return (texto || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function usuariosFiltrados() {
+    const texto = sinTildes(document.getElementById("filtro-texto").value.trim());
+    const estado = document.getElementById("filtro-estado").value;
+    const tipo = document.getElementById("filtro-tipo").value;
+    const accesos = document.getElementById("filtro-accesos").value;
+    return usuariosCargados.filter(u =>
+        (!texto || sinTildes(`${u.nombre} ${u.correo}`).includes(texto)) &&
+        (!estado || u.estado === estado) &&
+        (!tipo || (u.tipo || "miembro") === tipo) &&
+        (!accesos || (accesos === "con" ? u.accesos_activos > 0 : u.accesos_activos === 0))
+    );
+}
+
+function hayFiltros() {
+    return ["filtro-texto", "filtro-estado", "filtro-tipo", "filtro-accesos"]
+        .some(id => document.getElementById(id).value.trim() !== "");
+}
+
+function limpiarFiltros() {
+    ["filtro-texto", "filtro-estado", "filtro-tipo", "filtro-accesos"].forEach(id => { document.getElementById(id).value = ""; });
+    limiteUsuarios = POR_PAGINA;
+    pintarUsuarios();
+}
+
+function pintarUsuarios() {
+    const tbody = document.querySelector("#tabla-usuarios tbody");
+    const resumen = document.getElementById("usuarios-resumen");
+    const mas = document.getElementById("usuarios-mas");
+    const filtrados = usuariosFiltrados();
+    const visibles = filtrados.slice(0, limiteUsuarios);
+
+    if (usuariosCargados.length === 0) {
         filaMensaje(tbody, 5, "");
         tbody.querySelector("td").replaceChildren(...vacioConEnlace("Todavía no hay usuarios."));
+    } else if (filtrados.length === 0) {
+        filaMensaje(tbody, 5, "");
+        const limpiar = el("button", { clase: "btn-enlace-neutro", texto: "Limpiar filtros", atributos: { type: "button" } });
+        limpiar.addEventListener("click", limpiarFiltros);
+        tbody.querySelector("td").replaceChildren(el("span", { texto: "Ningún usuario coincide con los filtros. " }), limpiar);
     } else {
-        tbody.replaceChildren(...usuarios.map(filaUsuario));
+        tbody.replaceChildren(...visibles.map(filaUsuario));
     }
-    document.getElementById("kpi-usuarios").textContent =
-        usuarios.filter(u => u.estado === "activo").length;
+
+    if (usuariosCargados.length === 0) {
+        resumen.textContent = "";
+    } else if (hayFiltros()) {
+        resumen.textContent = `${filtrados.length} de ${usuariosCargados.length} usuarios coinciden` +
+            (visibles.length < filtrados.length ? ` · mostrando ${visibles.length}` : "");
+    } else {
+        resumen.textContent = visibles.length < filtrados.length
+            ? `Mostrando ${visibles.length} de ${filtrados.length} usuarios`
+            : `${filtrados.length} ${filtrados.length === 1 ? "usuario" : "usuarios"}`;
+    }
+    mas.hidden = visibles.length >= filtrados.length;
+    mas.textContent = `Mostrar ${Math.min(POR_PAGINA, filtrados.length - visibles.length)} más`;
+}
+
+function prepararFiltros() {
+    const alCambiar = () => { limiteUsuarios = POR_PAGINA; pintarUsuarios(); };
+    document.getElementById("filtro-texto").addEventListener("input", alCambiar);
+    ["filtro-estado", "filtro-tipo", "filtro-accesos"].forEach(id =>
+        document.getElementById(id).addEventListener("change", alCambiar));
+    document.getElementById("usuarios-mas").addEventListener("click", () => {
+        limiteUsuarios += POR_PAGINA;
+        pintarUsuarios();
+    });
 }
 
 const ESTADO_USUARIO = {
@@ -123,7 +193,9 @@ function filaUsuario(u) {
     enlace.addEventListener("click", () => abrirDetalle(u));
 
     return el("tr", {}, [
-        el("td", { clase: "col-nombre" }, [enlace]),
+        el("td", { clase: "col-nombre" }, u.tipo === "invitado"
+            ? [enlace, el("span", { clase: "badge badge-invitado", texto: "Invitado", atributos: { title: "Cuenta externa invitada al tenant" } })]
+            : [enlace]),
         celda(u.correo, "col-correo"),
         el("td", { clase: "col-estado" }, [badgeEstado(u.estado)]),
         el("td", { clase: "num col-accesos", texto: String(u.accesos_activos), atributos: { "data-etiqueta": "Accesos activos" } }),
@@ -611,6 +683,7 @@ async function cargarTodo() {
 
 document.addEventListener("DOMContentLoaded", () => {
     prepararDetalle();
+    prepararFiltros();
     prepararConfiguracion();
     mostrarVista();
     window.addEventListener("hashchange", mostrarVista);
