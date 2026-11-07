@@ -87,3 +87,13 @@ def test_filtros_de_usuarios_con_etiquetas():
 def test_panel_marca_invitados_y_pagina():
     assert "badge-invitado" in JS
     assert "POR_PAGINA = 50" in JS
+
+
+def test_confirmaciones_con_dialogo_propio():
+    # window.confirm no se puede diseñar ni explicar consecuencias; se usa un <dialog> accesible.
+    assert "confirm(" not in JS.replace("confirmar(", "")
+    dialogo = re.search(r'<dialog[^>]*id="confirmar"[^>]*>', HTML).group(0)
+    assert 'aria-labelledby="confirmar-titulo"' in dialogo
+    assert 'aria-describedby="confirmar-mensaje"' in dialogo
+    # El foco inicial va a «Cancelar», para que Enter no ejecute la acción destructiva.
+    assert re.search(r'<button[^>]*value="cancelar"[^>]*autofocus', HTML)

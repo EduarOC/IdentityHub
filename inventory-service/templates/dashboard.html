@@ -206,6 +206,23 @@
         </form>
     </dialog>
 
+    <dialog class="detalle confirmar" id="confirmar" aria-labelledby="confirmar-titulo" aria-describedby="confirmar-mensaje">
+        <form class="detalle-tarjeta" method="dialog">
+            <header class="detalle-cabecera">
+                <h2 id="confirmar-titulo">¿Confirmar?</h2>
+            </header>
+            <div class="detalle-cuerpo">
+                <p class="confirmar-mensaje" id="confirmar-mensaje"></p>
+                <ul class="confirmar-lista" id="confirmar-lista" hidden></ul>
+                <ul class="confirmar-notas" id="confirmar-notas"></ul>
+            </div>
+            <footer class="detalle-acciones">
+                <button type="submit" class="btn-secundario" value="cancelar" id="confirmar-cancelar" autofocus>Cancelar</button>
+                <button type="submit" class="btn-peligro" value="aceptar" id="confirmar-aceptar">Confirmar</button>
+            </footer>
+        </form>
+    </dialog>
+
     <output class="toast" id="toast" aria-live="polite"></output>
 
     <script src="/static/dashboard.js"></script>

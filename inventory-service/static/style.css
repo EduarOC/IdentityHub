@@ -460,3 +460,30 @@ body {
     .filtro-texto { flex-basis: 100%; }
     .filtro input, .filtro select { font-size: 16px; } /* evita el zoom automático de iOS */
 }
+
+/* ---------------------------------------------------------------- diálogo de confirmación */
+.confirmar { width: min(480px, calc(100vw - 32px)); }
+.confirmar .detalle-cabecera h2 { font-size: 19px; }
+.confirmar-mensaje { font-size: 14px; line-height: 1.5; margin: 8px 0 10px; overflow-wrap: anywhere; }
+.confirmar-lista {
+    list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px;
+}
+.confirmar-lista li {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 9px; font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere;
+}
+.confirmar-notas {
+    margin: 0 0 4px 18px; display: flex; flex-direction: column; gap: 6px;
+    font-size: 12.5px; color: var(--ink-soft); line-height: 1.45;
+}
+.btn-peligro {
+    background: var(--red-ink); color: white; border: none; border-radius: 7px;
+    padding: 7px 16px; font: 600 12.5px 'Inter', sans-serif; min-height: 36px; cursor: pointer;
+}
+.btn-peligro:hover { background: #7F1D14; }
+.btn-peligro:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 600px) {
+    /* En móvil, como el detalle de usuario: hoja inferior a todo el ancho. */
+    .confirmar { width: 100vw; }
+    .btn-peligro, .confirmar .btn-secundario { min-height: 44px; flex: 1; }
+}
