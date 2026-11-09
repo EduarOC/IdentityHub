@@ -5,7 +5,9 @@ Catálogo de aplicativos, usuarios y accesos, alimentado por conectores con el p
 identidad de la empresa (hoy Microsoft Entra ID; ver conectores.py y docs/CONECTORES.md).
 La revocación real en Keycloak durante el offboarding sigue pendiente (RF-08).
 """
+import csv
 import hmac
+import io
 import json
 import os
 import threading
@@ -442,6 +444,8 @@ def iniciar_offboarding(usuario_id):
         )
         session.add(evento)
         session.commit()
+        # El registro de Render remite al evento de auditoría, que guarda quién, a quién y qué.
+        app.logger.info("Auditoría: offboarding registrado como evento #%s", evento.id)
 
         return jsonify({
             "success": True,
@@ -678,6 +682,8 @@ def _sincronizar_entra(conector_id, responsable):
             conector = session.get(Conector, conector_id)
             conector.estado = "error"
             conector.ultimo_error = "La sincronización falló por un error interno. Revisa los registros del servidor."
+            session.add(EventoConector(tipo=conector.tipo, accion="sincronizar", responsable=responsable,
+                                       detalle="fallida"))
             session.commit()
             return
         conector.estado, conector.ultimo_error = "conectado", None
@@ -698,6 +704,8 @@ def _recuperar_sincronizaciones_interrumpidas():
         for conector in session.query(Conector).filter_by(estado="sincronizando").all():
             conector.estado = "error"
             conector.ultimo_error = "La sincronización se interrumpió por un reinicio del servidor. Vuelve a ejecutarla."
+            session.add(EventoConector(tipo=conector.tipo, accion="sincronizar", responsable="sistema",
+                                       detalle="interrumpida"))
         session.commit()
     finally:
         session.close()
@@ -802,6 +810,156 @@ def aplicar_sincronizacion_entra(session, datos):
     session.commit()
     return {"usuarios": len(usuarios), "aplicativos": len(catalogo), "shadow_it": len(shadow),
             "accesos_nuevos": nuevos, "accesos_revocados": revocados}
+
+
+# --------------------------------------------------------------------------- actividad
+# Línea de tiempo de solo lectura con todo lo que se hace desde el panel: los offboarding y las
+# acciones sobre los conectores. Los eventos no se editan ni se borran (RNF-11).
+ACCIONES_ACTIVIDAD = {"offboarding", "configurar", "probar", "sincronizar", "desconectar"}
+NOMBRES_CONECTOR = {c["tipo"]: c["nombre"] for c in CATALOGO_CONECTORES}
+LIMITE_ACTIVIDAD, MAXIMO_ACTIVIDAD, MAXIMO_CSV = 100, 1000, 5000
+
+
+def _filtros_actividad(args):
+    """Valida los filtros de la consulta. Devuelve (filtros, mensaje de error o None)."""
+    accion = (args.get("accion") or "").strip()
+    if accion and accion not in ACCIONES_ACTIVIDAD:
+        return None, "Acción no válida."
+    fechas = {}
+    for clave in ("desde", "hasta"):
+        valor = (args.get(clave) or "").strip()
+        if valor:
+            try:
+                fechas[clave] = datetime.strptime(valor, "%Y-%m-%d")
+            except ValueError:
+                return None, f"La fecha «{clave}» debe tener el formato AAAA-MM-DD."
+    try:
+        limite = int(args.get("limite") or LIMITE_ACTIVIDAD)
+    except ValueError:
+        return None, "El límite debe ser un número."
+    responsable = (args.get("responsable") or "").strip()[:200]
+    return {
+        "accion": accion,
+        "responsable": responsable,
+        "desde": fechas.get("desde"),
+        # «hasta» incluye todo ese día.
+        "hasta": fechas["hasta"] + timedelta(days=1) if "hasta" in fechas else None,
+        "limite": max(1, min(limite, MAXIMO_ACTIVIDAD)),
+    }, None
+
+
+def _aplicar_filtros(consulta, modelo, filtros):
+    if filtros["responsable"]:
+        consulta = consulta.filter(modelo.responsable == filtros["responsable"])
+    if filtros["desde"]:
+        consulta = consulta.filter(modelo.fecha >= filtros["desde"])
+    if filtros["hasta"]:
+        consulta = consulta.filter(modelo.fecha < filtros["hasta"])
+    return consulta
+
+
+def _evento_offboarding_a_json(evento, usuario):
+    aplicativos = [a.strip() for a in (evento.aplicativos_revocados or "").split(",") if a.strip()]
+    return {
+        "id": f"offboarding-{evento.id}",
+        "fecha": evento.fecha.isoformat() if evento.fecha else None,
+        "accion": "offboarding",
+        "responsable": evento.responsable,
+        "objetivo": usuario.nombre if usuario else f"Usuario #{evento.usuario_id}",
+        "correo": usuario.correo if usuario else None,
+        "resultado": "correcto",
+        "aplicativos": aplicativos,
+        "resultado_sso": evento.resultado_sso,
+        "resumen": None,
+    }
+
+
+def _evento_conector_a_json(evento):
+    resumen, resultado = None, "correcto"
+    detalle = evento.detalle or ""
+    if evento.accion == "sincronizar":
+        try:
+            resumen = json.loads(detalle)
+        except ValueError:
+            resultado = "fallido" if detalle in ("fallida", "interrumpida") else "correcto"
+    elif evento.accion == "probar":
+        resultado = "fallido" if detalle == "fallida" else "correcto"
+    return {
+        "id": f"conector-{evento.id}",
+        "fecha": evento.fecha.isoformat() if evento.fecha else None,
+        "accion": evento.accion,
+        "responsable": evento.responsable,
+        "objetivo": NOMBRES_CONECTOR.get(evento.tipo, evento.tipo),
+        "correo": None,
+        "resultado": resultado,
+        "aplicativos": [],
+        "resultado_sso": None,
+        "resumen": resumen,
+        "detalle": None if resumen else detalle,
+    }
+
+
+def _consultar_actividad(session, filtros, limite):
+    eventos = []
+    if filtros["accion"] in ("", "offboarding"):
+        consulta = _aplicar_filtros(
+            session.query(EventoOffboarding, Usuario).outerjoin(Usuario, Usuario.id == EventoOffboarding.usuario_id),
+            EventoOffboarding, filtros)
+        eventos += [_evento_offboarding_a_json(e, u)
+                    for e, u in consulta.order_by(EventoOffboarding.fecha.desc()).limit(limite).all()]
+    if filtros["accion"] != "offboarding":
+        # El inicio de una sincronización no se muestra: su resultado ya es otro evento.
+        consulta = session.query(EventoConector).filter(
+            ~((EventoConector.accion == "sincronizar") & (EventoConector.detalle == "iniciada")))
+        if filtros["accion"]:
+            consulta = consulta.filter(EventoConector.accion == filtros["accion"])
+        consulta = _aplicar_filtros(consulta, EventoConector, filtros)
+        eventos += [_evento_conector_a_json(e)
+                    for e in consulta.order_by(EventoConector.fecha.desc()).limit(limite).all()]
+    eventos.sort(key=lambda e: e["fecha"] or "", reverse=True)
+    return eventos[:limite]
+
+
+def _celda_csv(valor):
+    """Evita la inyección de fórmulas en Excel (OWASP CSV Injection): los nombres llegan del tenant."""
+    texto = "" if valor is None else str(valor)
+    return "'" + texto if texto[:1] in ("=", "+", "-", "@", "\t", "\r") else texto
+
+
+def _actividad_csv(eventos):
+    salida = io.StringIO()
+    escritor = csv.writer(salida)
+    escritor.writerow(["fecha", "accion", "responsable", "objetivo", "correo", "resultado",
+                       "aplicativos_revocados", "resultado_sso", "resumen"])
+    for e in eventos:
+        escritor.writerow([_celda_csv(v) for v in (
+            e["fecha"], e["accion"], e["responsable"], e["objetivo"], e["correo"], e["resultado"],
+            "; ".join(e["aplicativos"]), e["resultado_sso"],
+            json.dumps(e["resumen"], ensure_ascii=False) if e["resumen"] else e.get("detalle"),
+        )])
+    nombre = f"identityhub-actividad-{datetime.now(timezone.utc):%Y%m%d-%H%M}.csv"
+    # BOM para que Excel abra bien las tildes.
+    return Response("\ufeff" + salida.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+@app.route("/api/actividad", methods=["GET"])
+def listar_actividad():
+    """Eventos de auditoría, del más reciente al más antiguo. ?formato=csv descarga el resultado."""
+    filtros, error = _filtros_actividad(request.args)
+    if error:
+        return jsonify({"error": error}), 400
+    session = SessionLocal()
+    try:
+        if request.args.get("formato") == "csv":
+            return _actividad_csv(_consultar_actividad(session, filtros, MAXIMO_CSV))
+        responsables = sorted(
+            {r for (r,) in session.query(EventoOffboarding.responsable).distinct()}
+            | {r for (r,) in session.query(EventoConector.responsable).distinct()})
+        return jsonify({"eventos": _consultar_actividad(session, filtros, filtros["limite"]),
+                        "responsables": responsables, "limite": filtros["limite"]})
+    finally:
+        session.close()
 
 
 # Columnas agregadas después de que la base de producción ya existía. create_all() crea tablas

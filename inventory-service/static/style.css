@@ -487,3 +487,30 @@ body {
     .confirmar { width: 100vw; }
     .btn-peligro, .confirmar .btn-secundario { min-height: 44px; flex: 1; }
 }
+
+/* ---------------------------------------------------------------- actividad */
+.btn-exportar { display: inline-flex; align-items: center; text-decoration: none; margin-left: auto; min-height: 38px; }
+.actividad { list-style: none; display: flex; flex-direction: column; }
+.actividad > li.estado-vacio, .actividad > li.estado-error { padding: 14px 4px; }
+.evento { padding: 14px 4px 14px 16px; border-left: 2px solid var(--border); position: relative; }
+.evento + .evento { border-top: 1px solid var(--border); }
+.evento::before {
+    content: ""; position: absolute; left: -6px; top: 20px; width: 10px; height: 10px;
+    border-radius: 50%; background: var(--card); border: 2px solid var(--navy);
+}
+.evento-fallido::before { border-color: var(--red-ink); }
+.evento-cabecera { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.evento-cabecera h3 { font-size: 14.5px; font-weight: 600; overflow-wrap: anywhere; }
+.evento-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--ink-soft); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.evento-apps { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.evento-apps span {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 3px 8px; font-size: 12px; overflow-wrap: anywhere;
+}
+.evento-nota { font-size: 12.5px; color: var(--ink); margin-top: 6px; line-height: 1.45; }
+.evento-error { color: var(--red-ink); }
+.badge-offboarding-evento { background: #FDE7DA; color: var(--orange-ink); }
+@media (max-width: 600px) {
+    .btn-exportar { margin-left: 0; flex: 1 1 100%; justify-content: center; min-height: 44px; }
+    .filtro input[type="date"] { width: 100%; }
+}
