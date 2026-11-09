@@ -805,9 +805,10 @@ async function cargarActividad() {
         ? datos.eventos.map(filaEvento)
         : [el("li", { clase: "estado-vacio", texto: "No hay actividad con estos filtros." })]));
     const completo = datos.eventos.length < datos.limite;
-    document.getElementById("actividad-resumen").textContent = completo
-        ? `${datos.eventos.length} ${datos.eventos.length === 1 ? "evento" : "eventos"}`
-        : `Mostrando los ${datos.eventos.length} más recientes`;
+    const cantidad = datos.eventos.length;
+    let resumen = `Mostrando los ${cantidad} más recientes`;
+    if (completo) resumen = cantidad === 1 ? "1 evento" : `${cantidad} eventos`;
+    document.getElementById("actividad-resumen").textContent = resumen;
     document.getElementById("actividad-mas").hidden = completo || limiteActividad >= 1000;
 }
 
@@ -825,11 +826,11 @@ function prepararActividad() {
 }
 
 // ------------------------------------------------------------------ vistas
-const VISTAS = ["inventario", "integraciones", "actividad"];
+const VISTAS = new Set(["inventario", "integraciones", "actividad"]);
 
 function mostrarVista() {
     const pedida = location.hash.replace("#", "");
-    const vista = VISTAS.includes(pedida) ? pedida : "inventario";
+    const vista = VISTAS.has(pedida) ? pedida : "inventario";
     VISTAS.forEach(v => { document.getElementById(`vista-${v}`).hidden = v !== vista; });
     // La actividad se consulta cada vez que se abre: así refleja lo último que se hizo.
     if (vista === "actividad") {
