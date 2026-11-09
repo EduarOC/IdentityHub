@@ -68,6 +68,26 @@ function vacioConEnlace(mensaje) {
     return [el("span", { texto: `${mensaje} ` }), el("a", { texto: "Conecta un proveedor", atributos: { href: "#integraciones" } })];
 }
 
+// Diálogo de confirmación propio (en vez de window.confirm, que no se puede diseñar ni explica
+// las consecuencias). Devuelve una promesa que se resuelve en true solo si se pulsa la acción.
+// El foco empieza en «Cancelar»: Enter o Esc nunca ejecutan por accidente una acción destructiva.
+function confirmar({ titulo, mensaje, lista = [], notas = [], accion }) {
+    const dialogo = document.getElementById("confirmar");
+    document.getElementById("confirmar-titulo").textContent = titulo;
+    document.getElementById("confirmar-mensaje").textContent = mensaje;
+    const ul = document.getElementById("confirmar-lista");
+    ul.replaceChildren(...lista.map(texto => el("li", { texto })));
+    ul.hidden = lista.length === 0;
+    document.getElementById("confirmar-notas").replaceChildren(...notas.map(texto => el("li", { texto })));
+    document.getElementById("confirmar-aceptar").textContent = accion;
+    dialogo.returnValue = "";
+    dialogo.showModal();
+    document.getElementById("confirmar-cancelar").focus();
+    return new Promise(resolver => {
+        dialogo.addEventListener("close", () => resolver(dialogo.returnValue === "aceptar"), { once: true });
+    });
+}
+
 function filaMensaje(tbody, columnas, mensaje, clase = "estado-vacio") {
     tbody.replaceChildren(el("tr", {}, [el("td", { texto: mensaje, clase, atributos: { colspan: String(columnas) } })]));
 }
@@ -204,8 +224,41 @@ function filaUsuario(u) {
     ]);
 }
 
+const MAXIMO_LISTA = 6;
+
+async function confirmarOffboarding(usuarioId, nombre) {
+    let vigentes = [];
+    try {
+        const accesos = await pedirJSON(`/api/usuarios/${encodeURIComponent(usuarioId)}/accesos`);
+        vigentes = accesos.map(a => a.aplicativo);
+    } catch (error) {
+        console.error("No se pudieron leer los accesos antes del offboarding:", error);
+    }
+    const lista = vigentes.slice(0, MAXIMO_LISTA);
+    if (vigentes.length > MAXIMO_LISTA) lista.push(`y ${vigentes.length - MAXIMO_LISTA} más`);
+
+    const keycloak = conectores.find(c => c.tipo === "keycloak");
+    const notas = [
+        keycloak?.estado === "conectado"
+            ? "También se deshabilitará su cuenta en Keycloak y se cerrarán sus sesiones."
+            : "Keycloak no está conectado: su cuenta en el SSO seguirá activa.",
+        "No se modifica nada en Microsoft Entra ID ni en las aplicaciones de terceros: si siguen activos allá, volverán a aparecer en la próxima sincronización.",
+        "Queda registrado con tu usuario y la fecha. No se puede deshacer desde el panel.",
+    ];
+    let mensaje;
+    if (vigentes.length === 0) mensaje = `${nombre} no tiene accesos vigentes en el inventario. Se marcará como retirado.`;
+    else if (vigentes.length === 1) mensaje = `Se revocará el único acceso vigente de ${nombre}:`;
+    else mensaje = `Se revocarán los ${vigentes.length} accesos vigentes de ${nombre}:`;
+
+    let accion = "Marcar como retirado";
+    if (vigentes.length === 1) accion = "Revocar 1 acceso";
+    else if (vigentes.length > 1) accion = `Revocar ${vigentes.length} accesos`;
+
+    return confirmar({ titulo: `Offboarding de ${nombre}`, mensaje, lista, notas, accion });
+}
+
 async function ejecutarOffboarding(usuarioId, nombre, boton) {
-    if (!confirm(`¿Revocar todos los accesos de ${nombre}, incluido cualquier Shadow IT detectado?\n\nEsta acción no se puede deshacer desde el panel.`)) return;
+    if (!(await confirmarOffboarding(usuarioId, nombre))) return;
 
     boton.disabled = true;
     boton.textContent = "Procesando…";
@@ -636,8 +689,16 @@ async function sincronizarConector(c, b) {
 }
 
 async function desconectarConector(c, b) {
-    if (!confirm(`¿Desconectar ${c.nombre}?\n\nSe borran las credenciales guardadas y se deja de sincronizar. ` +
-                 "Los usuarios, aplicativos y el historial de accesos se conservan.")) return;
+    const confirmado = await confirmar({
+        titulo: `Desconectar ${c.nombre}`,
+        mensaje: c.sincroniza
+            ? "Se borran las credenciales guardadas y se deja de sincronizar."
+            : "Se borran las credenciales guardadas y los próximos offboarding dejarán de deshabilitar cuentas en el SSO.",
+        notas: ["Los usuarios, aplicativos y el historial de accesos se conservan.",
+                "Puedes volver a conectarlo cuando quieras con las mismas credenciales."],
+        accion: "Desconectar",
+    });
+    if (!confirmado) return;
     b.disabled = true;
     try {
         await enviarJSON(`/api/conectores/${encodeURIComponent(c.tipo)}`, "DELETE");
