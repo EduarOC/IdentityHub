@@ -17,6 +17,7 @@
         <nav class="pestanas" aria-label="Secciones">
             <a class="pestana" href="#inventario" data-vista="inventario">Inventario</a>
             <a class="pestana" href="#integraciones" data-vista="integraciones">Integraciones</a>
+            <a class="pestana" href="#actividad" data-vista="actividad">Actividad</a>
         </nav>
         <div class="sesion" id="sesion" hidden>
             <span class="sesion-usuario">Sesión de <strong id="sesion-usuario"></strong></span>
@@ -156,6 +157,46 @@
             </footer>
         </div>
     </dialog>
+
+    <main class="wrap" id="vista-actividad" hidden>
+        <div class="vista-cabecera">
+            <h1>Actividad</h1>
+            <p>Todo lo que se hace desde el panel: quién, cuándo y con qué resultado. Es de solo lectura: los eventos no se pueden editar ni borrar.</p>
+        </div>
+        <section class="panel">
+            <div class="filtros" role="search" aria-label="Filtrar actividad">
+                <label class="filtro">
+                    <span>Acción</span>
+                    <select id="actividad-accion">
+                        <option value="">Todas</option>
+                        <option value="offboarding">Offboarding</option>
+                        <option value="sincronizar">Sincronizaciones</option>
+                        <option value="probar">Pruebas de conexión</option>
+                        <option value="configurar">Configuración de conectores</option>
+                        <option value="desconectar">Desconexiones</option>
+                    </select>
+                </label>
+                <label class="filtro">
+                    <span>Responsable</span>
+                    <select id="actividad-responsable"><option value="">Todos</option></select>
+                </label>
+                <label class="filtro">
+                    <span>Desde</span>
+                    <input type="date" id="actividad-desde">
+                </label>
+                <label class="filtro">
+                    <span>Hasta</span>
+                    <input type="date" id="actividad-hasta">
+                </label>
+                <a class="btn-secundario btn-exportar" id="actividad-exportar" href="/api/actividad?formato=csv" download>Exportar CSV</a>
+            </div>
+            <p class="filtros-resumen" id="actividad-resumen" aria-live="polite"></p>
+            <ol class="actividad" id="actividad-lista"><li class="estado-vacio">Cargando actividad…</li></ol>
+            <div class="mas-usuarios">
+                <button type="button" class="btn-secundario" id="actividad-mas" hidden>Cargar más</button>
+            </div>
+        </section>
+    </main>
 
     <dialog class="detalle" id="config-conector" aria-labelledby="config-titulo">
         <form class="detalle-tarjeta" id="config-formulario" method="dialog" novalidate>

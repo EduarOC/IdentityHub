@@ -97,3 +97,12 @@ def test_confirmaciones_con_dialogo_propio():
     assert 'aria-describedby="confirmar-mensaje"' in dialogo
     # El foco inicial va a «Cancelar», para que Enter no ejecute la acción destructiva.
     assert re.search(r'<button[^>]*value="cancelar"[^>]*autofocus', HTML)
+
+
+def test_pestana_de_actividad():
+    assert 'href="#actividad"' in HTML
+    assert 'id="vista-actividad"' in HTML
+    for campo in ("actividad-accion", "actividad-responsable", "actividad-desde", "actividad-hasta"):
+        assert re.search(rf'<label class="filtro">\s*<span>[^<]+</span>\s*<(input|select)[^>]*id="{campo}"', HTML)
+    assert "/api/actividad" in JS
+    assert "formato" in JS  # exportación a CSV con los mismos filtros

@@ -61,7 +61,10 @@ Datawiza) que exige el login de Keycloak sin cambiar nada en la aplicación prot
 - **Navegador:** cookie de sesión `SameSite=Lax` y `Secure`, verificación de origen contra CSRF,
   CSP estricta sin código en línea, `X-Frame-Options`, `nosniff`, HSTS y `Referrer-Policy`.
 - **Auditoría:** el historial de accesos, los offboarding y las acciones sobre los conectores
-  no se borran.
+  no se borran. La pestaña **Actividad** del panel los muestra en una línea de tiempo (quién,
+  cuándo y con qué resultado), con filtros y exportación a CSV protegida contra inyección de
+  fórmulas. Los inicios de sesión se auditan en Keycloak: *Realm settings → User events settings →
+  Save events*, y se consultan en *Events*.
 - **Cadena de entrega:** `main` protegida (solo por Pull Request, con pruebas y Quality Gate en
   verde), dependencias con versión exacta y hash verificado, contenedores sin root y Gunicorn
   como servidor de producción.

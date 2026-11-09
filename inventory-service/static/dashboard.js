@@ -718,11 +718,124 @@ function prepararConfiguracion() {
     });
 }
 
+// ------------------------------------------------------------------ actividad
+const ACCION_ACTIVIDAD = {
+    offboarding: { titulo: e => `Offboarding de ${e.objetivo}`, clase: "badge-offboarding-evento" },
+    sincronizar: { titulo: e => `Sincronización de ${e.objetivo}`, clase: "badge-sincronizando" },
+    probar: { titulo: e => `Prueba de conexión de ${e.objetivo}`, clase: "badge-nativo" },
+    configurar: { titulo: e => `Configuración de ${e.objetivo}`, clase: "badge-proxy" },
+    desconectar: { titulo: e => `Desconexión de ${e.objetivo}`, clase: "badge-ninguno" },
+};
+const ETIQUETA_ACCION = { offboarding: "Offboarding", sincronizar: "Sincronización", probar: "Prueba",
+                          configurar: "Configuración", desconectar: "Desconexión" };
+const RESULTADO_SSO = {
+    deshabilitado: "Cuenta deshabilitada en Keycloak y sesiones cerradas",
+    no_encontrado: "Sin cuenta en Keycloak",
+    sin_conector: "Keycloak no conectado: la cuenta en el SSO siguió activa",
+    error: "Falló la deshabilitación en Keycloak",
+};
+let limiteActividad = 100;
+
+function filtrosActividad() {
+    const parametros = new URLSearchParams();
+    for (const [clave, id] of [["accion", "actividad-accion"], ["responsable", "actividad-responsable"],
+                               ["desde", "actividad-desde"], ["hasta", "actividad-hasta"]]) {
+        const valor = document.getElementById(id).value;
+        if (valor) parametros.set(clave, valor);
+    }
+    return parametros;
+}
+
+function detalleEvento(e) {
+    const partes = [];
+    if (e.accion === "offboarding") {
+        partes.push(e.aplicativos.length
+            ? el("div", { clase: "evento-apps" }, e.aplicativos.map(a => el("span", { texto: a })))
+            : el("p", { clase: "evento-nota", texto: "No tenía accesos vigentes en el inventario." }));
+        if (e.resultado_sso) {
+            partes.push(el("p", { clase: `evento-nota${e.resultado_sso === "error" ? " evento-error" : ""}`,
+                                  texto: RESULTADO_SSO[e.resultado_sso] || e.resultado_sso }));
+        }
+    } else if (e.resumen) {
+        partes.push(el("p", { clase: "evento-nota", texto: `${textoResumen(e.resumen)} · ${e.resumen.accesos_nuevos} accesos nuevos · ${e.resumen.accesos_revocados} revocados` }));
+    } else if (e.resultado === "fallido") {
+        partes.push(el("p", { clase: "evento-nota evento-error", texto: e.detalle === "interrumpida" ? "Interrumpida por un reinicio del servidor" : "Falló" }));
+    }
+    return partes;
+}
+
+function filaEvento(e) {
+    const info = ACCION_ACTIVIDAD[e.accion] || { titulo: () => e.accion, clase: "badge-offboarding" };
+    const cuando = e.fecha ? fechaHora(e.fecha) : "";
+    return el("li", { clase: `evento${e.resultado === "fallido" ? " evento-fallido" : ""}` }, [
+        el("div", { clase: "evento-cabecera" }, [
+            el("span", { clase: `badge ${info.clase}`, texto: ETIQUETA_ACCION[e.accion] || e.accion }),
+            el("h3", { texto: info.titulo(e) }),
+        ]),
+        el("p", { clase: "evento-meta" }, [
+            el("span", { texto: `por ${e.responsable}` }),
+            el("time", { texto: cuando, atributos: e.fecha ? { datetime: e.fecha } : {} }),
+            ...(e.correo ? [el("span", { texto: e.correo })] : []),
+        ]),
+        ...detalleEvento(e),
+    ]);
+}
+
+async function cargarActividad() {
+    const lista = document.getElementById("actividad-lista");
+    const parametros = filtrosActividad();
+    const exportar = new URLSearchParams(parametros);
+    exportar.set("formato", "csv");
+    document.getElementById("actividad-exportar").href = `/api/actividad?${exportar}`;
+    parametros.set("limite", String(limiteActividad));
+    let datos;
+    try {
+        datos = await pedirJSON(`/api/actividad?${parametros}`);
+    } catch (error_) {
+        lista.replaceChildren(el("li", { clase: "estado-error", texto: error_.mensaje || "No se pudo cargar la actividad." }));
+        return;
+    }
+    const select = document.getElementById("actividad-responsable");
+    const elegido = select.value;
+    select.replaceChildren(el("option", { texto: "Todos", atributos: { value: "" } }),
+        ...datos.responsables.map(r => el("option", { texto: r, atributos: { value: r } })));
+    select.value = datos.responsables.includes(elegido) ? elegido : "";
+
+    lista.replaceChildren(...(datos.eventos.length
+        ? datos.eventos.map(filaEvento)
+        : [el("li", { clase: "estado-vacio", texto: "No hay actividad con estos filtros." })]));
+    const completo = datos.eventos.length < datos.limite;
+    const cantidad = datos.eventos.length;
+    let resumen = `Mostrando los ${cantidad} más recientes`;
+    if (completo) resumen = cantidad === 1 ? "1 evento" : `${cantidad} eventos`;
+    document.getElementById("actividad-resumen").textContent = resumen;
+    document.getElementById("actividad-mas").hidden = completo || limiteActividad >= 1000;
+}
+
+function prepararActividad() {
+    const recargar = () => {
+        limiteActividad = 100;
+        cargarActividad().catch(error => console.error("No se pudo cargar la actividad:", error));
+    };
+    ["actividad-accion", "actividad-responsable", "actividad-desde", "actividad-hasta"].forEach(id =>
+        document.getElementById(id).addEventListener("change", recargar));
+    document.getElementById("actividad-mas").addEventListener("click", () => {
+        limiteActividad += 100;
+        cargarActividad().catch(error => console.error("No se pudo cargar la actividad:", error));
+    });
+}
+
 // ------------------------------------------------------------------ vistas
+const VISTAS = new Set(["inventario", "integraciones", "actividad"]);
+
 function mostrarVista() {
-    const vista = location.hash === "#integraciones" ? "integraciones" : "inventario";
-    document.getElementById("vista-inventario").hidden = vista !== "inventario";
-    document.getElementById("vista-integraciones").hidden = vista !== "integraciones";
+    const pedida = location.hash.replace("#", "");
+    const vista = VISTAS.has(pedida) ? pedida : "inventario";
+    VISTAS.forEach(v => { document.getElementById(`vista-${v}`).hidden = v !== vista; });
+    // La actividad se consulta cada vez que se abre: así refleja lo último que se hizo.
+    if (vista === "actividad") {
+        cargarActividad().catch(error => console.error("No se pudo cargar la actividad:", error));
+    }
     document.querySelectorAll(".pestana").forEach(p => {
         if (p.dataset.vista === vista) p.setAttribute("aria-current", "page");
         else p.removeAttribute("aria-current");
@@ -746,6 +859,7 @@ async function cargarTodo() {
 document.addEventListener("DOMContentLoaded", () => {
     prepararDetalle();
     prepararFiltros();
+    prepararActividad();
     prepararConfiguracion();
     mostrarVista();
     window.addEventListener("hashchange", mostrarVista);
